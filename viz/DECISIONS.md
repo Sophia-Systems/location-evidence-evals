@@ -150,4 +150,26 @@ following those.
     field then degrades to uninformative (all-floor, mixture flat) rather
     than misleading. Harmless in the staged demo (8 probes), but Phase 3
     should sanity-check heavy repeated probing of the dishonest anchor in
-    the UI at coarse resolutions.
+    the UI at coarse resolutions. *Resolved by item 25.*
+
+## Phase 3 (review) refinements
+
+25. **Cell-extent likelihood evaluation.** The Phase 3 review confirmed item
+    24's degeneracy surfaces immediately: one fabricated Telia probe yields a
+    ~20-30 km circle spanning at most a couple of 16.25 km cells, and heavy
+    probing under rtt-min can leave zero interior cell centers, silently
+    turning the anchor's evidence uninformative. Fix: every cell is evaluated
+    at the NEAREST point of its extent -- `d_eff = max(0, d_center -
+    cellRadKm)` (half-diagonal for square cells, Voronoi circumradius for
+    hex) -- so an exclusion circle that intersects any part of a cell credits
+    that cell, at every resolution. The shift is at most one cell radius and
+    strictly conservative (keeps cells in, never wrongly excludes), so the
+    hard cliff still lands at the v_c bound, one cell radius anti-aliased
+    outward. Consequence: the honest-optimum ring sits ~one cell radius
+    beyond the fiber ring in center-distance terms; the trust-cap test now
+    measures at the posterior argmax rather than the declared cell center.
+    Measured over 30 seeds, the staged fabrication demo (toggle + probe all
+    x8) lands the fooled peak within 50 km of declared with near-declared
+    mass above near-truth mass in 30/30 runs; preset 5's caption now steers
+    the viewer to "probe all a few times" -- the staged, test-verified
+    interaction.

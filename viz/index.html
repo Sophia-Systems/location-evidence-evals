@@ -1529,7 +1529,7 @@ const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and the assessment is fooled -- raising its pi is the defense.",
+      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate, probe all a few times, and the assessment is fooled -- raising its pi is the defense.",
     declared: TALLINN,
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
@@ -1614,6 +1614,8 @@ function createEngine(options = {}) {
       lats[i] = ll.lat;
       lons[i] = ll.lon;
     }
+    const cellRadKm =
+      shape === "square" ? (step * Math.SQRT2) / 2 : (step * Math.sqrt(2 / Math.sqrt(3))) / Math.sqrt(3);
     return {
       shape,
       n,
@@ -1624,6 +1626,7 @@ function createEngine(options = {}) {
       lons,
       stepKm: step,
       cellAreaKm2: step * step,
+      cellRadKm,
     };
   }
 
@@ -1827,6 +1830,7 @@ function createEngine(options = {}) {
   }
 
   function accumulateReceiptField(S, dist, rtt, accumulate) {
+    const cellRad = grid.cellRadKm;
     const mu = ev.assumed_interior_mean;
     const logPeak = -Math.log(mu);
     const logFloorOff = Math.log(ev.floorRel); // negative, e.g. -13.8
@@ -1843,7 +1847,8 @@ function createEngine(options = {}) {
     const twoOverVf = 2 / V_FIBER;
     const negSlope = -logFloorOff / ((V_C / V_FIBER - 1) * c1);
     for (let i = 0; i < n; i++) {
-      const d = dist[i];
+      const dc = dist[i] - cellRad;
+      const d = dc > 0 ? dc : 0; // nearest point of the cell's extent
       let v;
       if (d > r) v = logFloor;
       else {
@@ -2973,7 +2978,9 @@ function buildApp(root) {
       r.fabToggle.checked = dishonest;
       const minD = state.minDist.get(ra.id) ?? 0;
       const impossible =
-        ra.rttMin != null && ra.exclusionRadiusKm != null && ra.exclusionRadiusKm < minD;
+        ra.rttMin != null &&
+        ra.exclusionRadiusKm != null &&
+        ra.exclusionRadiusKm < minD - engine.getGrid().cellRadKm;
       r.warnNote.hidden = !impossible;
       if (impossible) {
         r.warnNote.textContent =

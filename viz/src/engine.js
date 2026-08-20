@@ -122,7 +122,7 @@ export const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and the assessment is fooled -- raising its pi is the defense.",
+      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate, probe all a few times, and the assessment is fooled -- raising its pi is the defense.",
     declared: TALLINN,
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
@@ -225,6 +225,13 @@ export function createEngine(options = {}) {
       lats[i] = ll.lat;
       lons[i] = ll.lon;
     }
+    // Circumradius of one cell (half-diagonal of the square; circumradius of
+    // the Voronoi hexagon, nearest-neighbor pitch / sqrt(3)). Likelihood
+    // fields evaluate each cell at the nearest point of its extent, so an
+    // exclusion circle that intersects any part of a cell credits it -- see
+    // accumulateReceiptField.
+    const cellRadKm =
+      shape === "square" ? (step * Math.SQRT2) / 2 : (step * Math.sqrt(2 / Math.sqrt(3))) / Math.sqrt(3);
     return {
       shape,
       n,
@@ -235,6 +242,7 @@ export function createEngine(options = {}) {
       lons,
       stepKm: step,
       cellAreaKm2: step * step,
+      cellRadKm,
     };
   }
 
@@ -503,7 +511,20 @@ export function createEngine(options = {}) {
   // make the v_c radius dead code, and clamping the annulus to the peak
   // breaks the trust-cap saturation under 'product' bundling. Documented as a
   // judgment call.)
+  //
+  // Cell extent (DECISIONS.md item 25): every cell is evaluated at the
+  // NEAREST point of its extent -- d_eff = max(0, d_center - cellRadKm) --
+  // not at its center. A receipt whose exclusion circle intersects any part
+  // of a cell credits that cell. Without this, an exclusion radius smaller
+  // than the lattice's largest center-to-point gap (a fabricating anchor in
+  // the declared city, or an honest anchor beside the attester) can leave
+  // ZERO cell centers inside the circle: the field degrades to all-floor and
+  // the anchor's evidence silently becomes uninformative -- exactly the
+  // degeneracy DECISIONS.md item 24 flagged for the fabrication demo. The
+  // shift is at most one cell radius (~11.5 km at the default grid), a
+  // conservative widening: it can only keep cells IN, never wrongly exclude.
   function accumulateReceiptField(S, dist, rtt, accumulate) {
+    const cellRad = grid.cellRadKm;
     const mu = ev.assumed_interior_mean;
     const logPeak = -Math.log(mu);
     const logFloorOff = Math.log(ev.floorRel); // negative, e.g. -13.8
@@ -525,7 +546,8 @@ export function createEngine(options = {}) {
     // excess = -(v_c/v_fiber - 1) * c1:
     const negSlope = -logFloorOff / ((V_C / V_FIBER - 1) * c1);
     for (let i = 0; i < n; i++) {
-      const d = dist[i];
+      const dc = dist[i] - cellRad;
+      const d = dc > 0 ? dc : 0; // nearest point of the cell's extent
       let v;
       if (d > r) v = logFloor;
       else {

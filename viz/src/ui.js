@@ -500,10 +500,13 @@ export function buildApp(root) {
       const showSim = state.presetId === "evasive" || dishonest;
       r.simRow.hidden = !showSim;
       r.fabToggle.checked = dishonest;
-      // impossible receipt: the bundle's floor excludes every cell
+      // impossible receipt: the bundle's floor excludes every cell (cells are
+      // evaluated at the nearest point of their extent, hence the cellRadKm)
       const minD = state.minDist.get(ra.id) ?? 0;
       const impossible =
-        ra.rttMin != null && ra.exclusionRadiusKm != null && ra.exclusionRadiusKm < minD;
+        ra.rttMin != null &&
+        ra.exclusionRadiusKm != null &&
+        ra.exclusionRadiusKm < minD - engine.getGrid().cellRadKm;
       r.warnNote.hidden = !impossible;
       if (impossible) {
         r.warnNote.textContent =

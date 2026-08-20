@@ -131,15 +131,17 @@ section("exclusion geometry");
     const { S } = eng.getAnchorField(ra.id);
     const r = ra.exclusionRadiusKm;
     for (let i = 0; i < g.cellCount; i++) {
-      if (dist[i] > r) {
+      // cells are evaluated at the nearest point of their extent (DECISIONS
+      // 25), so a cell is fully outside only when even its nearest point is
+      if (dist[i] - g.cellRadKm > r) {
         outsideCount++;
         if (Math.abs(S[i] - logFloor) > 1e-9) floorOk = false;
-      } else if (S[i] > logFloor + 1e-9) {
+      } else if (dist[i] <= r && S[i] > logFloor + 1e-9) {
         interiorAboveFloor++;
       }
     }
   }
-  check("every cell beyond the exclusion radius sits exactly on the epsilon floor", floorOk, `outside cells checked: ${outsideCount}`);
+  check("every cell wholly beyond the exclusion radius sits exactly on the epsilon floor", floorOk, `outside cells checked: ${outsideCount}`);
   check("interior cells rise above the floor", interiorAboveFloor > 1000, `got ${interiorAboveFloor}`);
 
   // allowance <= true delta_att: the true cell is never excluded, by any anchor
@@ -208,7 +210,14 @@ section("trust cap: pi = 0.3 saturates near log2(1/0.3) bits (both bundle modes)
 
   const gainBits = () => {
     const post = eng.computePosterior();
-    return Math.log2(post[idx] / post[refIdx]);
+    // Measure at the posterior's own argmax: the per-anchor cap bounds the
+    // log-odds between ANY two cells, and cell-extent evaluation (DECISIONS
+    // 25) shifts the honest optimum ~one cell radius off the declared
+    // center, so the declared cell itself is no longer exactly the optimum
+    // under 'product' bundling.
+    let pk = 0;
+    for (let i = 0; i < post.length; i++) if (post[i] > post[pk]) pk = i;
+    return Math.log2(post[pk] / post[refIdx]);
   };
 
   const gains = { "rtt-min": [], product: [] };
@@ -231,7 +240,7 @@ section("trust cap: pi = 0.3 saturates near log2(1/0.3) bits (both bundle modes)
     const final = gs[gs.length - 1];
     const mid = gs[3]; // after 40 probes
     check(
-      `${mode}: declared-cell log-odds gain saturates near the cap (${fmt(final)} vs cap ${fmt(cap)})`,
+      `${mode}: peak-cell log-odds gain saturates near the cap (${fmt(final)} vs cap ${fmt(cap)})`,
       final > cap - 0.3 && final <= cap + 1e-6,
       `gains: ${gs.map((x) => fmt(x, 2)).join(", ")}`
     );
@@ -470,6 +479,38 @@ section("conservative interior: single receipt reads as a broad glow (DECISIONS 
     "both interior cells sit far above the epsilon floor",
     S[iRing] > logFloor + 5 && S[iDeep] > logFloor + 5
   );
+}
+
+// ---------------------------------------------------------------------------
+section("cell extent: tiny exclusion circles stay informative (DECISIONS 25)");
+// ---------------------------------------------------------------------------
+{
+  // A fabricating anchor in the declared city invents near-zero RTTs whose
+  // v_c circle can shrink below the lattice pitch. Cells are evaluated at the
+  // nearest point of their extent, so the circle always credits at least the
+  // anchor's own cell: the field must never degrade to all-floor and become
+  // silently uninformative (the degeneracy DECISIONS.md item 24 flagged).
+  for (const [shape, n] of [["square", 160], ["square", 80], ["hex", 160]]) {
+    const eng = createEngine({ seed: 53, gridN: n, gridShape: shape });
+    eng.addAnchor({ facility: "telia-tallinn" });
+    // rtt 0.03 ms -> r = 4.5 km, far below every lattice pitch on offer
+    eng.addReceipt({ anchorId: "telia-tallinn", rtt: 0.03, timestampMs: 1000 });
+    const { S, maxS } = eng.getAnchorField("telia-tallinn");
+    const mu = eng.getEvaluatorParams().assumed_interior_mean;
+    const logFloor = Math.log(1e-6) - Math.log(mu);
+    let above = 0;
+    for (let i = 0; i < S.length; i++) if (S[i] > logFloor + 1e-9) above++;
+    check(
+      `${shape} n=${n}: a 4.5 km exclusion circle still lights at least one cell`,
+      above >= 1,
+      `cells above floor: ${above}`
+    );
+    check(
+      `${shape} n=${n}: the anchor's own cell evaluates near the interior peak`,
+      maxS > -Math.log(mu) - 0.1,
+      `maxS ${fmt(maxS)} vs peak ${fmt(-Math.log(mu))}`
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
