@@ -426,23 +426,32 @@ export function createEngine(options = {}) {
 
   // ---- evaluator ----------------------------------------------------------
 
-  const ev = {
+  // Evaluator defaults. A preset may override any of them (presets so far
+  // only set `allowance`); loadPreset restores EVERY evaluator parameter to
+  // the preset's value or this default, so a preset's lesson never inherits
+  // leftover state from the previous scenario.
+  //
+  // assumed_interior_mean: mean of the one-sided interior excess (route
+  // stretch + queueing + processing), ms. DELIBERATELY CONSERVATIVE and
+  // decoupled from the simulator's true noise (DECISIONS.md item 7): the
+  // paper (s.4) says the interior carries "almost nothing", so the evaluator
+  // assumes a slow tail rather than sharpening belief onto the fiber ring.
+  // Default tuned numerically (Phase 2): large enough that a single receipt's
+  // interior reads as a broad glow rather than a thin ring (e-fold length
+  // mu * v_fiber / 2 ~ 120 km against typical 300-500 km circles), small
+  // enough that multi-anchor discrimination in the evasive preset survives.
+  // A literally flat interior (< 3x over 500 km) needs mu >= 4.5 ms, which
+  // erases the honest-anchor truth preference the evasive preset teaches;
+  // 1.2 ms is the measured compromise (see viz/DECISIONS.md item 7).
+  const EV_DEFAULTS = {
     allowance: 0, // ms
-    // Assumed mean of the one-sided interior excess (route stretch + queueing
-    // + processing), ms. DELIBERATELY CONSERVATIVE and decoupled from the
-    // simulator's true noise (DECISIONS.md item 7): the paper (s.4) says the
-    // interior carries "almost nothing", so the evaluator assumes a slow tail
-    // rather than sharpening belief onto the fiber ring. Default tuned
-    // numerically (Phase 2): large enough that a single receipt's interior
-    // reads as a broad glow rather than a thin ring (e-fold length
-    // mu * v_fiber / 2 ~ 120 km against typical 300-500 km circles), small
-    // enough that multi-anchor discrimination in the evasive preset survives.
-    // A literally flat interior (< 3x over 500 km) needs mu >= 4.5 ms, which
-    // erases the honest-anchor truth preference the evasive preset teaches;
-    // 1.2 ms is the measured compromise (see viz/DECISIONS.md item 7).
-    assumed_interior_mean: 1.2, // ms
+    assumed_interior_mean: 1.2, // ms (see above)
     bundleMode: "rtt-min", // 'rtt-min' (default; paper s.6 redundancy discounting) | 'product' (PROMPT.md)
     floorRel: 1e-6, // exclusion floor, relative to the interior peak f(0)
+  };
+
+  const ev = {
+    ...EV_DEFAULTS,
     interval: { startMs: -Infinity, endMs: Infinity }, // assessment interval T
   };
 
@@ -759,9 +768,18 @@ export function createEngine(options = {}) {
       delta_att: preset.delta_att ?? 0.05,
       path_noise_mean: preset.path_noise_mean ?? 0.1,
     });
+    // Restore EVERY evaluator parameter to the preset's value or the default
+    // (previously only allowance was restored and bundleMode was preserved
+    // across presets; leftover interior-fade / bundle / floor settings from
+    // free play then silently reshaped the next preset's lesson). The
+    // assessment interval resets to the engine default; the UI immediately
+    // narrows it to the preset's display window.
     setEvaluatorParams({
-      allowance: preset.allowance ?? 0,
-      bundleMode: ev.bundleMode, // preserve the adjudicated default / user choice
+      allowance: preset.allowance ?? EV_DEFAULTS.allowance,
+      assumed_interior_mean: preset.assumed_interior_mean ?? EV_DEFAULTS.assumed_interior_mean,
+      bundleMode: preset.bundleMode ?? EV_DEFAULTS.bundleMode,
+      floorRel: preset.floorRel ?? EV_DEFAULTS.floorRel,
+      interval: { startMs: -Infinity, endMs: Infinity },
     });
     return preset;
   }

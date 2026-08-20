@@ -1773,11 +1773,15 @@ function createEngine(options = {}) {
   }
 
 
-  const ev = {
+  const EV_DEFAULTS = {
     allowance: 0, // ms
-    assumed_interior_mean: 1.2, // ms
+    assumed_interior_mean: 1.2, // ms (see above)
     bundleMode: "rtt-min", // 'rtt-min' (default; paper s.6 redundancy discounting) | 'product' (PROMPT.md)
     floorRel: 1e-6, // exclusion floor, relative to the interior peak f(0)
+  };
+
+  const ev = {
+    ...EV_DEFAULTS,
     interval: { startMs: -Infinity, endMs: Infinity }, // assessment interval T
   };
 
@@ -2030,8 +2034,11 @@ function createEngine(options = {}) {
       path_noise_mean: preset.path_noise_mean ?? 0.1,
     });
     setEvaluatorParams({
-      allowance: preset.allowance ?? 0,
-      bundleMode: ev.bundleMode, // preserve the adjudicated default / user choice
+      allowance: preset.allowance ?? EV_DEFAULTS.allowance,
+      assumed_interior_mean: preset.assumed_interior_mean ?? EV_DEFAULTS.assumed_interior_mean,
+      bundleMode: preset.bundleMode ?? EV_DEFAULTS.bundleMode,
+      floorRel: preset.floorRel ?? EV_DEFAULTS.floorRel,
+      interval: { startMs: -Infinity, endMs: Infinity },
     });
     return preset;
   }

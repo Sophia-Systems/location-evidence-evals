@@ -652,6 +652,32 @@ section("presets");
   check("all presets load and populate 4-8 anchors", true);
   check("facility library has the 10 PROMPT.md facilities", FACILITIES.length === 10);
 
+  // loadPreset restores EVERY evaluator parameter to the preset's value or
+  // the engine default -- leftover free-play settings (interior fade, bundle
+  // mode, allowance, floor, interval) must not reshape the next preset's
+  // lesson.
+  eng.setEvaluatorParams({
+    allowance: 0.4,
+    assumed_interior_mean: 4.0,
+    bundleMode: "product",
+    floorRel: 1e-3,
+  });
+  eng.setAssessmentInterval(0, 1);
+  eng.loadPreset("baseline");
+  {
+    const p = eng.getEvaluatorParams();
+    check(
+      "loadPreset restores all evaluator params to preset defaults",
+      p.allowance === 0 &&
+        p.assumed_interior_mean === 1.2 &&
+        p.bundleMode === "rtt-min" &&
+        p.floorRel === 1e-6 &&
+        p.interval.startMs === -Infinity &&
+        p.interval.endMs === Infinity,
+      JSON.stringify(p)
+    );
+  }
+
   // Trust staging (DECISIONS.md item 26): erasure-lesson presets stage every
   // anchor highly trusted; the trust haze debuts in preset 3.
   for (const id of ["baseline", "geometry", "allowance"]) {
