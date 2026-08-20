@@ -6,13 +6,13 @@ Working draft. This document specifies how signed round-trip-time evidence updat
 
 Coordination on steering advanced AI rests on frontier organizations making credible declarations about their compute: what accelerators they operate, and where. Verifying the location component of such a declaration is a small, concrete piece of that problem -- a way to detect defection from declared arrangements early enough to respond, before dangerous capabilities are developed outside the terms parties agreed to. Hardware-enabled assurance mechanisms are the natural near-term home for this capability; export-control enforcement is one concrete application among several.
 
-Location verification is a pipeline of three stages. Evidence is **collected**: anchors probe the attester and sign receipts. Evidence is **evaluated**: receipts become a location assessment -- a probability distribution with stated assumptions. Policies are **evaluated against the assessment**: geofences, change detection, co-location tests. Much of what is called "location verification" blends these stages together, and disambiguating them is valuable both technically and politically: the middle stage can stay neutral and auditable precisely because it neither produces the measurements nor decides what is acceptable. This document specifies the middle stage: given a stream of signed latency measurements, what should a verifier believe about where the attester is, and with what confidence?
+Location verification is a pipeline of three stages. Evidence is **collected**: anchors probe the attester and sign receipts. Evidence is **evaluated**: receipts become a location credibility assessment -- a probability distribution with stated assumptions. Policies are **evaluated against the assessment**: geofences, change detection, co-location tests. Much of what is called "location verification" blends these stages together, and disambiguating them is valuable both technically and politically: the middle stage can stay neutral and auditable precisely because it neither produces the measurements nor decides what is acceptable. This document specifies the middle stage: given a stream of signed latency measurements, what should a verifier believe about where the attester is, and with what confidence?
 
 ## 2. Setting and vocabulary
 
 Three parties are involved, and we follow the terminology of the SovCert measurement program and of the [location verification framework](https://www.johnx.co/research/location-verification-framework) we have been developing. An **anchor** is a fixed host at known, declared coordinates that responds to probes and signs receipts; the literature also refers to this role as "landmark" or "watchtower" nodes. The **attester** is the machine whose location is being measured. The **verifier** is the service that evaluates evidence and location-based policy conformance -- a role that plausibly corresponds to the auditor node in [Cankaya's proposed architecture](https://www.lesswrong.com/posts/fgvmKqRGvBteKeDoc/a-system-overview-for-near-term-low-trust-ai-compute) for near-term low-trust AI compute. The verifier is never the pinging host; measurement is the anchors' job.
 
-The measurement objects: a **probe** is a measurement packet; the **challenge** is the nonce inside it; a **receipt** is the anchor's signed, timestamped response. The **declared location** is the coordinates asserted by the operator or a registry -- the thing under test. The output of this stage is the **location assessment**: the posterior probability map over locations for a stated time interval, together with its qualifiers (section 8). The framework calls this the assessment; we use "location assessment" throughout and avoid the misleadingly point-like "evaluated location."
+The measurement objects: a **probe** is a measurement packet; the **challenge** is the nonce inside it; a **receipt** is the anchor's signed, timestamped response. The **declared location** is the coordinates asserted by the operator or a registry -- the thing under test. The output of this stage is the **location credibility assessment**: the posterior probability map over locations for a stated time interval, together with its qualifiers (section 8). This is the framework's credibility assessment -- the pair the evidence function produces -- specialized to location, and we prefer it to the misleadingly point-like "evaluated location." The rest of the framework's vocabulary maps cleanly onto this system: a receipt is this system's location stamp; an anchor's receipts, composed, are location evidence; and the declared location together with the time interval is the location claim the evidence is evaluated against (a manifest pairs the two).
 
 More generally, the object under evaluation is an **event**, claimed to have occurred within a spacetime envelope: here, "this chip was present" within a spatial region and a time interval. The framework is deliberately flexible about what event is claimed; the machinery below is written for presence of an attester key, which is what RTT evidence can speak to.
 
@@ -25,16 +25,18 @@ Every claim in this document rests on two assumptions, both recorded in the asse
 
 ### This stage and the next
 
-**Evidence evaluation** (this document). Input: receipts, anchor metadata, a prior. Output: `(posterior probability map, Q)` -- the location assessment. This stage deliberately ignores policy questions involving geofences, borders, or time-series analysis.
+**Evidence evaluation** (this document). Input: receipts, anchor metadata, a prior. Output: `(posterior probability map, Q)` -- the location credibility assessment. This stage deliberately ignores policy questions involving geofences, borders, or time-series analysis.
 
-**Geospatial policy evaluation** (the next stage, out of scope here). Consumes the location assessment and applies a policy: geofencing (containment in a policy zone), change detection (deviation in a time series), co-location likelihood (crossover-distance quantification). For geofencing, the core operation is nearly trivial -- `P(inside geofence)` is the sum of posterior mass in the cells inside the polygon -- and turning that number plus Q into a yes/no requires a threshold that encodes tolerance for false accusations versus missed evasions. That threshold is a policy judgment, which is why it does not belong in the evidence-evaluation stage. The separation follows [Cankaya's](https://www.lesswrong.com/posts/fgvmKqRGvBteKeDoc/a-system-overview-for-near-term-low-trust-ai-compute) principle of separating evidence capture and commitment from evaluation.
+**Geospatial policy evaluation** (the next stage, out of scope here). Consumes the location credibility assessment and applies a policy: geofencing (containment in a policy zone), change detection (deviation in a time series), co-location likelihood (crossover-distance quantification). For geofencing, the core operation is nearly trivial -- `P(inside geofence)` is the sum of posterior mass in the cells inside the polygon -- and turning that number plus Q into a yes/no requires a threshold that encodes tolerance for false accusations versus missed evasions. That threshold is a policy judgment, which is why it does not belong in the evidence-evaluation stage. The separation follows [Cankaya's](https://www.lesswrong.com/posts/fgvmKqRGvBteKeDoc/a-system-overview-for-near-term-low-trust-ai-compute) principle of separating evidence capture and commitment from evaluation.
+
+SovCert's certificate pipeline packages appraisal as a single stage -- §4.2.2, "Verification and Policy Evaluation" -- whose output, the Verifiable Attestation Result, carries a computed location, a radius, and a confidence score. This document refines that stage from the inside rather than departing from it: the location credibility assessment is the natural intermediate artifact within §4.2.2, and a VAR's location claims can be derived from it by the policy step that follows. Making the seam explicit is the point of the framing here: the evaluation half can stay neutral and auditable precisely because the policy half is somewhere else.
 
 ### Two attester postures
 
 The likelihood model must declare which world it is computed in:
 
 - A **compliant attester** answers probes as fast as its hardware and software allow. It does not manipulate its own delay.
-- An **evasive attester** manipulates its own response timing -- inserting artificial latency, responding selectively, or engineering its response path to beat the delays the verifier assumed -- in order to move the location assessment away from the truth.
+- An **evasive attester** manipulates its own response timing -- inserting artificial latency, responding selectively, or engineering its response path to beat the delays the verifier assumed -- in order to move the resulting assessment away from the truth.
 
 The posture determines how much of a measurement is usable. The hard outer bound of section 4 holds in both worlds: no attester, compliant or evasive, can shorten its round trip to an honest anchor below true propagation time. The inner information does not: treating a large RTT as evidence that the attester is far away is valid only for a compliant attester, because an evasive one can manufacture delay at will. The assumed posture is therefore part of the result, and it is recorded in Q.
 
@@ -69,7 +71,7 @@ Against an honest anchor, no attester strategy produces an RTT below true propag
 
 **Almost nothing on the inner side.** A machine next to the anchor can trivially show a 200 ms RTT by delaying its response, so a large RTT is weak evidence of distance. How weak depends on the attester posture. For a compliant attester, excess latency beyond the propagation floor follows empirical path-inflation statistics (Spring et al. 2003; Bozkurt et al. 2017) -- honest routes have bounded path stretch, so "very close but very slow" can be softly down-weighted. For an evasive attester, delay is free to manufacture, and the interior of the disk carries essentially no gradient. The likelihood model must use the compliant-attester interior only when that assumption is defensible, and Q records the choice.
 
-The picture to hold: a receipt does not point at a location. It erases nearly everything outside a circle and says little inside it. The location assessment emerges from the intersection of many such circles.
+The picture to hold: a receipt does not point at a location. It erases nearly everything outside a circle and says little inside it. The location credibility assessment emerges from the intersection of many such circles.
 
 ## 5. The delay allowance
 
@@ -81,7 +83,9 @@ The same rule closes a tempting refinement. Because every anchor's receipt about
 
 Beyond this rule, this document treats `δ_att` minimally: it is a variable in the model whose distribution -- its floor, its tail, its behavior under GPU load -- is the subject of ongoing empirical work in the measurement program. Rigorous quantification belongs there, not here.
 
-## 6. The engine
+## 6. The evidence evaluation function
+
+The framework names this machinery the **evidence function**, written ℰ; "evidence evaluation function" is the same thing said in full, and this section specifies it for RTT receipts.
 
 Grid the region of interest into cells. The posterior is computed for a stated time interval `T`, from the receipts whose anchor timestamps fall within `T`. Each receipt is a point-in-time observation by the anchor's clock; the collection of them is evidence about whether the attester was present in a given cell during `T`. The output is a **posterior probability map**: for each cell `x`,
 
@@ -89,7 +93,7 @@ Grid the region of interest into cells. The posterior is computed for a stated t
 posterior(x) ∝ prior(x) × product over anchors of L(bundle_a | x)
 ```
 
-where `bundle_a` is anchor `a`'s receipts within `T`, and `L(bundle_a | x)` is the likelihood of that bundle if the attester were in cell `x` -- how plausible this evidence would be, had the machine been there. Multiply, renormalize; that is the entire engine. Every subtlety in this document lives inside the likelihood terms, plus the bookkeeping in Q.
+where `bundle_a` is anchor `a`'s receipts within `T`, and `L(bundle_a | x)` is the likelihood of that bundle if the attester were in cell `x` -- how plausible this evidence would be, had the machine been there. Multiply, renormalize; that is the whole of ℰ. Every subtlety in this document lives inside the likelihood terms, plus the bookkeeping in Q.
 
 Three commitments make the semantics precise:
 
@@ -103,17 +107,17 @@ Per-anchor bundling implements **redundancy discounting**, one of the framework'
 
 The receipt design (section 3) concentrates trust in the anchor: the anchor's signed interval is the only number the verifier relies on, so a **dishonest anchor** -- one that signs intervals it did not measure, whether through collusion, key theft, or coercion -- can fabricate arbitrary evidence. Most latency-based location verification designs assume honest anchors outright; Sheng et al.'s [BFT-PoLoc](https://arxiv.org/abs/2403.13230) (2024) instead tolerates a Byzantine fraction of anchors through fortified multilateration. This document takes a complementary route: rather than assuming honesty or bounding the dishonest fraction, quantify each anchor's trustworthiness and carry it through the evaluation. Trust-minimized anchor-network design remains an open question.
 
-Give each anchor a compromise probability `pi`: the prior probability that it is dishonest. Its bundle's likelihood becomes a mixture:
+Give each anchor `a` a compromise probability `ε_a`: the prior probability that it is dishonest. (The symbol follows robust statistics, where a likelihood contaminated by a fraction ε of arbitrary data is Huber's ε-contamination model -- exactly the situation here. The framework reserves π for the posterior itself, so the compromise prior must not reuse it.) The bundle's likelihood becomes a mixture:
 
 ```
-L(bundle | x) = (1 - pi) × L_honest(bundle | x) + pi × L_dishonest(bundle | x)
+L(bundle_a | x) = (1 - ε_a) × L_honest(bundle_a | x) + ε_a × L_dishonest(bundle_a | x)
 ```
 
 A dishonest anchor can sign anything regardless of where the attester is, so `L_dishonest` carries no location information -- approximately flat in `x`. In plain terms: each anchor's evidence moves the map in proportion to how much the verifier trusts that anchor, because a distrusted anchor's receipts are partly explained away by the possibility that they were fabricated.
 
-**The trust cap.** The mixture bounds what any one anchor can contribute. However precise the measurements, the hypothesis "this anchor is dishonest" retains its prior probability `pi`, so the odds an anchor's bundle can generate in favor of the declared location saturate near `1/pi`. An anchor with `pi = 0.1` contributes at most about 3.3 bits toward the declaration; `pi = 0.01` caps near 6.6 bits. Past that ceiling, measurement precision changes nothing -- only trust does. Anchor governance, not measurement engineering, sets the limit on achievable confidence.
+**The trust cap.** The mixture bounds what any one anchor can contribute. However precise the measurements, the hypothesis "this anchor is dishonest" retains its prior probability `ε_a`, so the odds an anchor's bundle can generate in favor of the declared location saturate near `1/ε_a`. An anchor with `ε_a = 0.1` contributes at most about 3.3 bits toward the declaration; `ε_a = 0.01` caps near 6.6 bits. Past that ceiling, measurement precision changes nothing -- only trust does. Anchor governance, not measurement engineering, sets the limit on achievable confidence.
 
-The cap binds per anchor, not per receipt. Receipts from one anchor are conditionally independent given that anchor's honesty, but they all share the single event "this anchor is dishonest." The mixture therefore applies once, to the anchor's whole bundle: additional receipts tighten the exclusion radius under the honest branch, and leave the `pi` term untouched.
+The cap binds per anchor, not per receipt. Receipts from one anchor are conditionally independent given that anchor's honesty, but they all share the single event "this anchor is dishonest." The mixture therefore applies once, to the anchor's whole bundle: additional receipts tighten the exclusion radius under the honest branch, and leave the `ε_a` term untouched.
 
 **Correlated compromise.** Compromise events are not independent across anchors. Anchors sharing an operator, a jurisdiction, or a legal exposure can fail together -- one court order, one key-management breach, one shared motive. Five same-operator anchors provide five anchors' worth of geometry but roughly one anchor's worth of trust, so the joint compromise model needs common-cause structure, and operator and jurisdictional diversity become axes of evidence quality separate from geographic spread. A well-supported assessment needs all of them; this is the framework's heterogeneity argument made quantitative. Prior work on quantifying exactly these axes for node networks exists in [GEOBEAT](https://geobeat.xyz) (physical distribution, jurisdictional diversity, infrastructure heterogeneity); a credible diversity measure for anchor sets will need harder effort and is tracked as an open question.
 
@@ -133,7 +137,7 @@ The dimensions below are a working draft, not a settled schema. Identifying the 
 - **Time interval and freshness.** The interval `T` the map covers, the stationarity assumption, and staleness at evaluation time.
 - **Privacy and decentralization.** What the evidence reveals beyond the claim, and how concentrated the parties producing it are.
 
-The policy stage's weighting scheme consumes the location assessment and produces the decision. How that weighting should work is out of scope here; this stage's obligation is to make Q complete enough that the weighting never has to guess.
+The policy stage's weighting scheme consumes the location credibility assessment and produces the decision. How that weighting should work is out of scope here; this stage's obligation is to make Q complete enough that the weighting never has to guess.
 
 ## 9. Three nested variants
 
@@ -147,7 +151,7 @@ Each variant is strictly weaker in assumptions than the next, and Q records whic
 
 ```
 evaluate(receipts, anchor_metadata, prior, variant, time_interval)
-    -> (posterior probability map, Q)      -- the location assessment
+    -> (posterior probability map, Q)      -- the location credibility assessment
 ```
 
 Everything downstream -- geofences, thresholds, change detection, co-location -- consumes this pair in the policy-evaluation stage. Nothing in this document imports a border.
