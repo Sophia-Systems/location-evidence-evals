@@ -163,7 +163,11 @@ body {
   max-width: 720px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  /* clamp to two lines: long captions (trust-staging notes, preset 5's
+     fabrication walkthrough) were silently ellipsized on one line */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .top-actions {
@@ -3445,6 +3449,7 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
     $("#preset-caption").textContent = preset.caption;
+    $("#preset-caption").title = preset.caption; // full text on hover if clamped
 
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";
 

@@ -156,7 +156,11 @@ body {
   max-width: 720px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  /* clamp to two lines: long captions (trust-staging notes, preset 5's
+     fabrication walkthrough) were silently ellipsized on one line */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .top-actions {
