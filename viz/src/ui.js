@@ -1,0 +1,877 @@
+// ui.js -- DOM construction, controls, and orchestration for the
+// evidence-evaluation viz. Composes the pure engine (engine.js) with the
+// canvas renderer (render.js). All copy for info affordances lives here:
+// every parameter gets plain language AND notation (PROMPT.md "Parameters").
+
+import {
+  createEngine,
+  V_C,
+  V_FIBER,
+  PRESETS,
+  FACILITIES,
+  PI_PRESETS,
+} from "./engine.js";
+import { createRenderer } from "./render.js";
+import { RAMP_NAMES, rampGradientCSS } from "./ramps.js";
+
+const NOON = 12 * 3600 * 1000; // sim clock origin: 12:00:00 UTC, ms since midnight
+const ANIM_MS = 350;
+
+// ---------------------------------------------------------------------------
+// Info affordance copy: plain language + notation, per PROMPT.md's example.
+// ---------------------------------------------------------------------------
+const INFO = {
+  vc:
+    "The lightspeed conversion used for exclusion radii. Nothing physical outruns light in vacuum, so a radius computed at this speed is safe against any attester -- the security bound. Fixed: v_c = 300 km/ms.",
+  vfiber:
+    "How fast signals actually travel in fiber: c/n with n = 1.47. Used to simulate honest round trips and to shape expectations inside the circle -- never for exclusion, since straighter routes or microwave links can beat it. v_fiber = 204 km/ms.",
+  delta_att:
+    "Time the attester's machine spends handling a probe before answering -- waking the process, parsing, signing. Sits inside every measurement. Symbol: δ_att. (Simulator: the true value; the verifier never observes it directly.)",
+  path_noise:
+    "Extra time from indirect routes and queueing. It is one-sided: noise only ever ADDS time, so it can make a machine look farther away, never closer. Drawn from an exponential with this mean.",
+  allowance:
+    "The slice of each measured round trip the verifier writes off as not-travel-time before converting to distance: r = v_c × (RTT − allowance) / 2. Too small merely loosens the circles; too large shrinks them below what physics justifies and the TRUE location can fall outside -- the assessment becomes wrong, not vague. Every 1 ms written off shrinks each radius by 150 km. The rule: write off only time no attester could avoid spending.",
+  interior:
+    "How quickly the evaluator's belief fades moving inward from a circle's edge. Kept deliberately slow (conservative): a receipt mostly says “not outside this circle” and almost nothing about where inside it, because a nearby machine can always answer slowly -- never faster than light. Mean of the assumed one-sided excess, μ_int (ms).",
+  pi:
+    "The verifier's prior probability that this anchor is compromised -- signing intervals it never measured. Evidence moves the map in proportion to trust: a distrusted anchor's receipts are partly explained away as possibly fabricated, and its total contribution caps at log2(1/π) bits no matter how many receipts arrive. (The paper writes ε_a; this page uses π per the build spec.)",
+  bundle:
+    "How one anchor's receipts combine. rtt-min (default): receipts from one anchor share a path, so their distance information is nearly exhausted by the smallest of them -- redundancy discounting. product: multiply per-receipt likelihoods instead.",
+  grid:
+    "The display lattice for the posterior. Square or equal-area hex, at the chosen resolution. Layout only -- every distance that feeds the model is a great-circle distance, whatever the cells look like.",
+  interval:
+    "One assessment covers one stated time interval; only receipts stamped inside it contribute. Combining them assumes the machine did not move during the interval (stationarity) -- the interval and that assumption travel with the result in Q.",
+  attack:
+    "World truth: how the attester behaves. Inflation pads answers toward consistency with the declared location where physics permits -- padding only ever adds time, which pushes apparent location AWAY from honest anchors, so it cannot fake presence. Deflation answers faster than the verifier's allowance assumes (δ_att drops to 0.005 ms) -- the class that produces false presence.",
+  fabricate:
+    "SIMULATION control, not a verifier input. A dishonest anchor never measures the attester: it signs an invented receipt consistent with the DECLARED location. Its fabricated story may violate the true-distance floor -- physics binds honest measurement, not invention. The verifier's only defense is this anchor's π.",
+  floor:
+    "Color is on a log scale relative to the brightest cell. Beyond a lightspeed radius the likelihood falls off a cliff -- but lands on a tiny floor (10⁻⁶ of peak), not zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt, so the evaluation keeps that residual explicit.",
+  posture:
+    "The assumptions the current map is computed under -- the qualifiers Q that travel with any location credibility assessment. This evaluator always assumes a COMPLIANT attester (answers as fast as it can); the evasive presets deliberately violate that assumption so you can watch what it costs. Standing dependencies (hardware binding, signature soundness) are in “About this model”.",
+  receipts:
+    "Total receipts whose anchor timestamps fall inside the assessment interval. Receipts outside the interval exist but do not contribute.",
+};
+
+// ---------------------------------------------------------------------------
+
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const info = (key, extraClass = "") =>
+  `<button class="info ${extraClass}" data-tip="${esc(INFO[key])}" aria-label="explain" type="button">i</button>`;
+
+const fmtMsVal = (x, d = 3) => (x == null ? "—" : `${x.toFixed(d)} ms`);
+const fmtKm = (x) => (x == null ? "—" : `${Math.round(x).toLocaleString("en-US")} km`);
+function fmtClock(ms) {
+  const s = Math.floor(ms / 1000);
+  const hh = Math.floor(s / 3600) % 24;
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(hh)}:${p(mm)}:${p(ss)}`;
+}
+const fmtHM = (ms) => fmtClock(ms).slice(0, 5);
+const parseHM = (str) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(str);
+  return m ? (Number(m[1]) * 3600 + Number(m[2]) * 60) * 1000 : null;
+};
+
+export function buildApp(root) {
+  const engine = createEngine({ seed: (Date.now() % 100000) + 1 });
+
+  const state = {
+    presetId: "baseline",
+    clockMs: NOON,
+    revealTruth: false,
+    ramp: "viridis",
+    hoverId: null,
+    dragId: null,
+    dragMoved: false,
+    placing: false,
+    customSeq: 0,
+    lastReadouts: null,
+    minDist: new Map(), // anchor id -> min distance to any cell (impossible-receipt check)
+  };
+
+  // ---- scaffold -----------------------------------------------------------
+
+  root.innerHTML = `
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1><span class="mark">◉</span> Location evidence</h1>
+        <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
+      </div>
+      <div class="presets">
+        <div class="preset-chips" id="preset-chips"></div>
+        <div class="preset-caption" id="preset-caption"></div>
+      </div>
+      <div class="top-actions">
+        <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
+        <button class="btn" id="reset-btn" title="return to this preset's initial state">reset</button>
+      </div>
+    </header>
+    <main>
+      <section class="map-pane">
+        <canvas id="map"></canvas>
+        <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
+        <div class="hud">
+          <div class="legend">
+            <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
+            <div class="bar" id="legend-bar"></div>
+            <div class="ends"><span>ε floor (10⁻⁶×)</span><span>log scale</span><span>peak</span></div>
+          </div>
+        </div>
+        <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
+        <div id="map-tip"></div>
+      </section>
+      <aside class="controls">
+        <section class="panel">
+          <h2>anchors
+            <span class="h-actions">
+              <button class="btn small" id="probe-all">probe all</button>
+              <span class="add-wrap">
+                <button class="btn small primary" id="add-anchor">+ add</button>
+                <div class="add-menu" id="add-menu"></div>
+              </span>
+            </span>
+          </h2>
+          <div class="anchor-list" id="anchor-list"></div>
+          <div class="hint">click an anchor on the map to probe it · drag to move (moving clears its receipts)</div>
+        </section>
+
+        <section class="panel">
+          <h2>verifier parameters</h2>
+          <div class="row"><span class="lbl">allowance ${info("allowance")}</span>
+            <input type="range" id="allowance" min="0" max="0.5" step="0.005" value="0">
+            <span class="val" id="allowance-val"></span></div>
+          <div class="row"><span class="lbl">interior fade μ ${info("interior")}</span>
+            <input type="range" id="interior" min="0.2" max="5" step="0.1" value="1.2">
+            <span class="val" id="interior-val"></span></div>
+          <div class="row"><span class="lbl">bundle mode ${info("bundle")}</span>
+            <span class="seg" id="bundle-seg"><button data-v="rtt-min">rtt-min</button><button data-v="product">product</button></span></div>
+          <div class="row"><span class="lbl">v_c ${info("vc")}</span>
+            <span class="fixed-val">300 km/ms · fixed (security bound)</span></div>
+          <div class="row"><span class="lbl">v_fiber ${info("vfiber")}</span>
+            <span class="fixed-val">204 km/ms · fixed (c/n, n = 1.47)</span></div>
+        </section>
+
+        <section class="panel">
+          <h2>simulator · world truth <span class="h-actions"><span class="sim-tag" style="font:700 8.5px var(--font-mono);letter-spacing:.1em;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 5px;">simulation</span></span></h2>
+          <div class="row"><span class="lbl">attester ${info("attack")}</span>
+            <span class="seg" id="attack-seg"><button data-v="none">honest</button><button data-v="inflation">inflates</button><button data-v="deflation">deflates</button></span></div>
+          <div class="row"><span class="lbl">δ_att (true) ${info("delta_att")}</span>
+            <input type="range" id="delta-att" min="0" max="0.3" step="0.005" value="0.05">
+            <span class="val" id="delta-att-val"></span></div>
+          <div class="row"><span class="lbl">path noise mean ${info("path_noise")}</span>
+            <input type="range" id="path-noise" min="0" max="0.5" step="0.01" value="0.1">
+            <span class="val" id="path-noise-val"></span></div>
+        </section>
+
+        <section class="panel">
+          <h2>assessment interval</h2>
+          <div class="interval-line">receipts from
+            <input type="time" id="int-start" value="12:00" step="60"> to
+            <input type="time" id="int-end" value="12:05" step="60"> UTC contribute ${info("interval")}
+          </div>
+          <div class="clock-line"><span>sim clock <b id="sim-clock">12:00:00</b> UTC</span>
+            <span><b id="receipt-count">0</b> receipts in interval ${info("receipts")}</span></div>
+        </section>
+
+        <section class="panel">
+          <h2>display</h2>
+          <div class="row"><span class="lbl">grid ${info("grid")}</span>
+            <span class="seg" id="grid-seg"><button data-v="square">square</button><button data-v="hex">hex</button></span>
+            <span class="val" id="grid-val"></span></div>
+          <div class="row"><span class="lbl">resolution</span>
+            <input type="range" id="grid-res" min="80" max="220" step="20" value="160">
+            <span class="val" id="grid-res-val"></span></div>
+          <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
+            <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
+        </section>
+
+        <section class="panel">
+          <h2>about</h2>
+          <details class="fold" id="about-fold">
+            <summary>about this model</summary>
+            <div class="fold-body">
+              <p><b>A flat window on a round problem.</b> v1 renders a flat 2D European window (~2,600 × 2,600 km, azimuthal equidistant) of what is truly a 3D, whole-Earth domain. Distances feeding the model are great-circle; the flatness is display-only, and a global version would change the picture, not the math.</p>
+              <p><b>Two standing dependencies.</b> Everything here locates <i>the machine answering with the attester's signing key</i>. Binding that key to particular hardware is a separate, unsolved problem. And receipts are only as good as their signatures: an adversary who can forge the scheme voids every bound on this page.</p>
+              <p><b>Why the floor is not zero.</b> Beyond a lightspeed radius the likelihood drops off a cliff but lands on a small residual (10⁻⁶ of peak) rather than zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt. The evaluation keeps that residual explicit instead of rounding it away.</p>
+              <p><b>Geography is context, not claim.</b> Country boundaries are drawn to orient you; nothing in the computation reads them. Geofences and P(inside region) belong to the policy stage, deliberately not built here.</p>
+            </div>
+          </details>
+          <details class="fold probe-anatomy" id="anatomy-fold">
+            <summary>anatomy of a probe</summary>
+            <div class="fold-body">
+              <p>One measurement is a four-packet exchange, timed on the <b>anchor's clock alone</b> -- no synchronization. The anchor times challenge-out to signed-nonce-in, then signs the interval it measured; the attester relays the receipt but cannot alter it.</p>
+              <svg viewBox="0 0 260 74" aria-label="round-trip delay budget">
+                <line x1="10" y1="30" x2="250" y2="30" stroke="var(--line)" stroke-width="1"/>
+                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="100" y1="30" x2="128" y2="30" stroke="var(--warn)"/>
+                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="220" y1="30" x2="248" y2="30" stroke="var(--ink-faint)"/>
+                <text class="an-lbl" x="14" y="16">path out</text>
+                <text class="an-lbl" x="88" y="52">δ_att: wake, parse, sign</text>
+                <text class="an-lbl" x="140" y="16">path back</text>
+                <text class="an-lbl" x="212" y="52">queueing</text>
+              </svg>
+              <p>Every term besides propagation is <b>one-sided</b> -- it only adds time. So the minimum over many probes converges on true propagation from above, and honest noise fails safe: it loosens circles, never wrongly excludes the truth.</p>
+            </div>
+          </details>
+        </section>
+      </aside>
+    </main>
+  </div>`;
+
+  const $ = (sel) => root.querySelector(sel);
+  const canvas = $("#map");
+  const renderer = createRenderer(canvas);
+  renderer.setGrid(engine.getGrid());
+
+  // ---- display transform & animation --------------------------------------
+
+  let displayT = null; // Float32Array, display-space [0,1] per cell
+  let animFrom = null;
+  let animTarget = null;
+  let animT0 = 0;
+  let animating = false;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  function buildTargetT(post) {
+    const n = post.length;
+    const t = new Float32Array(n);
+    let pmax = 0;
+    let pmin = Infinity;
+    for (let i = 0; i < n; i++) {
+      if (post[i] > pmax) pmax = post[i];
+      if (post[i] < pmin) pmin = post[i];
+    }
+    if (!(pmax > 0) || pmax / Math.max(pmin, 1e-300) < 1.05) {
+      t.fill(0.35); // uniform belief: a calm wash, not a shout
+      return t;
+    }
+    const inv = 1 / pmax;
+    const k = 1 / (6 * Math.LN10); // 6-decade window, matching the 1e-6 floor
+    for (let i = 0; i < n; i++) {
+      const rel = post[i] * inv;
+      const v = rel <= 1e-6 ? 0 : 1 + Math.log(rel) * k;
+      t[i] = v < 0 ? 0 : v;
+    }
+    return t;
+  }
+
+  const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+
+  function presentField(target, animate) {
+    if (
+      !animate ||
+      reducedMotion.matches ||
+      !displayT ||
+      displayT.length !== target.length
+    ) {
+      displayT = Float32Array.from(target);
+      renderer.updateHeat(displayT);
+      drawScene();
+      animating = false;
+      return;
+    }
+    animFrom = Float32Array.from(displayT); // retarget from what is on screen
+    animTarget = Float32Array.from(target);
+    animT0 = performance.now();
+    if (!animating) {
+      animating = true;
+      requestAnimationFrame(tick);
+    }
+  }
+
+  function tick(now) {
+    if (!animating) return;
+    const u = Math.min(1, (now - animT0) / ANIM_MS);
+    const e = easeOutCubic(u);
+    const n = animTarget.length;
+    for (let i = 0; i < n; i++) {
+      displayT[i] = animFrom[i] + (animTarget[i] - animFrom[i]) * e;
+    }
+    renderer.updateHeat(displayT);
+    drawScene();
+    if (u >= 1) {
+      animating = false;
+      return;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // ---- scene & refresh ----------------------------------------------------
+
+  function computeMinDist(id) {
+    const dist = engine.getAnchorDistField(id);
+    let m = Infinity;
+    for (let i = 0; i < dist.length; i++) if (dist[i] < m) m = dist[i];
+    state.minDist.set(id, m);
+  }
+
+  function sceneData() {
+    const sim = engine.getSimulator();
+    const ro = state.lastReadouts ?? engine.getReadouts();
+    const pos = new Map(engine.getAnchors().map((a) => [a.id, a]));
+    return {
+      anchors: ro.perAnchor.map((ra) => {
+        const p = pos.get(ra.id);
+        return {
+          id: ra.id,
+          name: ra.name,
+          lat: p.lat,
+          lon: p.lon,
+          circleKm: ra.exclusionRadiusKm,
+          dishonest: engine.isAnchorDishonest(ra.id),
+          hovered: state.hoverId === ra.id,
+          dragging: state.dragId === ra.id,
+        };
+      }),
+      declared: sim.declared,
+      truth: state.revealTruth ? sim.trueLocation : null,
+      labels: true,
+    };
+  }
+
+  function drawScene() {
+    renderer.draw(sceneData());
+  }
+
+  function refresh({ animate = true } = {}) {
+    const post = engine.computePosterior();
+    state.lastReadouts = engine.getReadouts();
+    presentField(buildTargetT(post), animate);
+    updateAnchorCards();
+    updateGlobalReadouts();
+  }
+
+  // ---- global readouts ----------------------------------------------------
+
+  function updateGlobalReadouts() {
+    const ro = state.lastReadouts;
+    $("#receipt-count").textContent = ro.receiptsInInterval;
+    $("#sim-clock").textContent = fmtClock(state.clockMs);
+    const ev = engine.getEvaluatorParams();
+    const pis = ro.perAnchor.map((a) => a.pi);
+    const piSummary = pis.length
+      ? `π ${Math.min(...pis).toFixed(2)}–${Math.max(...pis).toFixed(2)}`
+      : "no anchors";
+    $("#assumptions-text").textContent =
+      `assumes compliant attester · allowance ${ev.allowance.toFixed(3)} ms` +
+      ` · trust as shown (${piSummary}) · receipts ${fmtHM(ev.interval.startMs)}–${fmtHM(
+        ev.interval.endMs
+      )} UTC (${ro.receiptsInInterval} contribute) · uniform prior`;
+  }
+
+  // ---- clock & probing ----------------------------------------------------
+
+  function advanceClock() {
+    state.clockMs += 7000 + Math.floor(Math.random() * 6000);
+    $("#sim-clock").textContent = fmtClock(state.clockMs);
+  }
+
+  function doProbe(anchorId) {
+    engine.probe(anchorId, state.clockMs);
+    advanceClock();
+    refresh({ animate: true });
+  }
+
+  $("#probe-all").addEventListener("click", () => {
+    engine.probeAll(state.clockMs);
+    advanceClock();
+    refresh({ animate: true });
+  });
+
+  // ---- anchor cards -------------------------------------------------------
+
+  const cardRefs = new Map(); // id -> {el, stats, piSlider, piVal, bits, presetBtns, warnNote, simRow, fabToggle}
+
+  function rebuildAnchorCards() {
+    const list = $("#anchor-list");
+    list.innerHTML = "";
+    cardRefs.clear();
+    for (const a of engine.getAnchors()) {
+      if (!state.minDist.has(a.id)) computeMinDist(a.id);
+      const el = document.createElement("div");
+      el.className = "anchor-card";
+      el.dataset.id = a.id;
+      el.innerHTML = `
+        <header>
+          <span class="dot"></span>
+          <span class="name">${esc(a.name)}</span>
+          <button class="btn small primary probe-one" type="button">probe</button>
+          <button class="btn small ghost remove-one" title="remove anchor" type="button">×</button>
+        </header>
+        <div class="stats">
+          <span>latest RTT <b class="s-latest">—</b></span>
+          <span>rtt_min <b class="s-min">—</b></span>
+          <span>exclusion r <b class="s-radius">—</b></span>
+          <span>receipts in T <b class="s-count">0</b></span>
+        </div>
+        <div class="pi-row">
+          <span class="pi-lbl">π ${info("pi")}</span>
+          <input type="range" min="0.01" max="0.5" step="0.01" value="${a.pi}">
+          <span class="pi-val">${a.pi.toFixed(2)}</span>
+        </div>
+        <div class="id-presets">
+          <button data-pi="0.10" type="button">neutral 0.10</button>
+          <button data-pi="0.30" type="button">ally 0.30</button>
+          <button data-pi="0.03" type="button">adversary 0.03</button>
+        </div>
+        <div class="bits">this anchor's contribution caps at log2(1/π) = <b class="s-bits"></b> bits</div>
+        <div class="warn-note" hidden></div>
+        <div class="sim-row" hidden>
+          <span class="sim-tag">simulation</span>
+          <label class="switch sim"><input type="checkbox" class="fab-toggle"><span>this anchor fabricates for the declared location</span></label>
+          ${info("fabricate")}
+        </div>`;
+      list.appendChild(el);
+
+      const refs = {
+        el,
+        latest: el.querySelector(".s-latest"),
+        min: el.querySelector(".s-min"),
+        radius: el.querySelector(".s-radius"),
+        count: el.querySelector(".s-count"),
+        piSlider: el.querySelector('input[type="range"]'),
+        piVal: el.querySelector(".pi-val"),
+        bits: el.querySelector(".s-bits"),
+        presetBtns: [...el.querySelectorAll(".id-presets button")],
+        warnNote: el.querySelector(".warn-note"),
+        simRow: el.querySelector(".sim-row"),
+        fabToggle: el.querySelector(".fab-toggle"),
+      };
+      cardRefs.set(a.id, refs);
+
+      el.querySelector(".probe-one").addEventListener("click", () => doProbe(a.id));
+      el.querySelector(".remove-one").addEventListener("click", () => {
+        engine.removeAnchor(a.id);
+        state.minDist.delete(a.id);
+        if (state.hoverId === a.id) state.hoverId = null;
+        rebuildAnchorCards();
+        refresh({ animate: true });
+        refreshAddMenu();
+      });
+      refs.piSlider.addEventListener("input", () => {
+        engine.setAnchorPi(a.id, Number(refs.piSlider.value));
+        refresh({ animate: false });
+      });
+      for (const b of refs.presetBtns) {
+        b.addEventListener("click", () => {
+          const v = Number(b.dataset.pi);
+          engine.setAnchorPi(a.id, v);
+          refs.piSlider.value = v;
+          refresh({ animate: true });
+        });
+      }
+      refs.fabToggle.checked = engine.isAnchorDishonest(a.id);
+      refs.fabToggle.addEventListener("change", () => {
+        engine.setAnchorDishonest(a.id, refs.fabToggle.checked);
+        updateAnchorCards();
+        drawScene();
+      });
+      el.addEventListener("mouseenter", () => setHover(a.id));
+      el.addEventListener("mouseleave", () => setHover(null));
+    }
+    updateAnchorCards();
+    refreshAddMenu();
+  }
+
+  function updateAnchorCards() {
+    const ro = state.lastReadouts ?? engine.getReadouts();
+    for (const ra of ro.perAnchor) {
+      const r = cardRefs.get(ra.id);
+      if (!r) continue;
+      r.latest.textContent = fmtMsVal(ra.latestRtt);
+      r.min.textContent = fmtMsVal(ra.rttMin);
+      r.radius.textContent = fmtKm(ra.exclusionRadiusKm);
+      r.count.textContent = ra.receiptsInInterval;
+      r.bits.textContent = ra.bitsCeiling.toFixed(1);
+      if (Math.abs(Number(r.piSlider.value) - ra.pi) > 1e-9) r.piSlider.value = ra.pi;
+      r.piVal.textContent = ra.pi.toFixed(2);
+      for (const b of r.presetBtns) {
+        b.classList.toggle("active", Math.abs(Number(b.dataset.pi) - ra.pi) < 1e-9);
+      }
+      const dishonest = engine.isAnchorDishonest(ra.id);
+      r.el.classList.toggle("dishonest", dishonest);
+      r.el.classList.toggle("hovered", state.hoverId === ra.id);
+      // fabrication toggle: an evasive-preset (simulation) affordance
+      const showSim = state.presetId === "evasive" || dishonest;
+      r.simRow.hidden = !showSim;
+      r.fabToggle.checked = dishonest;
+      // impossible receipt: the bundle's floor excludes every cell
+      const minD = state.minDist.get(ra.id) ?? 0;
+      const impossible =
+        ra.rttMin != null && ra.exclusionRadiusKm != null && ra.exclusionRadiusKm < minD;
+      r.warnNote.hidden = !impossible;
+      if (impossible) {
+        r.warnNote.textContent =
+          "impossible receipt: the exclusion radius excludes every cell in the domain — this bundle contributes nothing (a physical impossibility under the honest model).";
+      }
+    }
+  }
+
+  // ---- add-anchor menu ----------------------------------------------------
+
+  function refreshAddMenu() {
+    const menu = $("#add-menu");
+    const have = new Set(engine.getAnchors().map((a) => a.id));
+    menu.innerHTML =
+      FACILITIES.map(
+        (f) =>
+          `<button data-fid="${f.id}" ${have.has(f.id) ? "disabled" : ""} type="button">${esc(f.name)}</button>`
+      ).join("") +
+      `<div class="sep"></div><button data-place="1" type="button">click on the map…</button>`;
+    for (const b of menu.querySelectorAll("button[data-fid]")) {
+      b.addEventListener("click", () => {
+        engine.addAnchor({ facility: b.dataset.fid });
+        computeMinDist(b.dataset.fid);
+        closeAddMenu();
+        rebuildAnchorCards();
+        refresh({ animate: true });
+      });
+    }
+    menu.querySelector("button[data-place]").addEventListener("click", () => {
+      closeAddMenu();
+      setPlacing(true);
+    });
+  }
+
+  const closeAddMenu = () => $("#add-menu").classList.remove("open");
+  $("#add-anchor").addEventListener("click", (e) => {
+    e.stopPropagation();
+    $("#add-menu").classList.toggle("open");
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("#add-menu").contains(e.target)) closeAddMenu();
+  });
+
+  function setPlacing(on) {
+    state.placing = on;
+    canvas.classList.toggle("placing", on);
+    $("#placing-note").classList.toggle("show", on);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setPlacing(false);
+  });
+
+  // ---- map interaction ----------------------------------------------------
+
+  const tip = $("#map-tip");
+
+  function setHover(id) {
+    if (state.hoverId === id) return;
+    state.hoverId = id;
+    canvas.classList.toggle("over-anchor", id != null && !state.placing);
+    for (const [aid, r] of cardRefs) r.el.classList.toggle("hovered", aid === id);
+    if (id == null) tip.classList.remove("show");
+    drawScene();
+  }
+
+  function showTip(clientX, clientY, id) {
+    const ro = state.lastReadouts ?? engine.getReadouts();
+    const ra = ro.perAnchor.find((a) => a.id === id);
+    if (!ra) return;
+    tip.innerHTML = `
+      <div class="tip-name">${esc(ra.name)}${engine.isAnchorDishonest(id) ? ' <span style="color:var(--warn)">· fabricating</span>' : ""}</div>
+      <div class="tip-stats">latest RTT  ${fmtMsVal(ra.latestRtt)}
+rtt_min     ${fmtMsVal(ra.rttMin)}
+exclusion r ${fmtKm(ra.exclusionRadiusKm)}
+π ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</div>
+      <div class="tip-hint">click to probe · drag to move</div>`;
+    const pane = canvas.parentElement.getBoundingClientRect();
+    tip.style.left = `${clientX - pane.left + 14}px`;
+    tip.style.top = `${clientY - pane.top + 10}px`;
+    tip.classList.add("show");
+  }
+
+  function canvasPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+
+  let movePending = null;
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (state.placing) return;
+    const [px, py] = canvasPos(e);
+    const id = renderer.anchorAt(px, py, sceneData().anchors);
+    if (id) {
+      state.dragId = id;
+      state.dragMoved = false;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.classList.add("dragging");
+    }
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    const [px, py] = canvasPos(e);
+    if (state.dragId) {
+      const start = !state.dragMoved;
+      state.dragMoved = true;
+      if (movePending == null) {
+        movePending = requestAnimationFrame(() => {
+          movePending = null;
+          const ll = renderer.cssToLatLon(px, py);
+          engine.moveAnchor(state.dragId, ll.lat, ll.lon);
+          computeMinDist(state.dragId);
+          refresh({ animate: false });
+        });
+      }
+      if (start) tip.classList.remove("show");
+      return;
+    }
+    const id = renderer.anchorAt(px, py, sceneData().anchors);
+    setHover(id);
+    if (id) showTip(e.clientX, e.clientY, id);
+    else tip.classList.remove("show");
+  });
+
+  canvas.addEventListener("pointerup", (e) => {
+    if (state.dragId) {
+      const id = state.dragId;
+      const moved = state.dragMoved;
+      state.dragId = null;
+      state.dragMoved = false;
+      canvas.classList.remove("dragging");
+      canvas.releasePointerCapture(e.pointerId);
+      if (!moved) doProbe(id); // a click on an anchor IS the primary action
+      else refresh({ animate: true });
+      return;
+    }
+    if (state.placing) {
+      const [px, py] = canvasPos(e);
+      const ll = renderer.cssToLatLon(px, py);
+      const id = `custom-${++state.customSeq}`;
+      engine.addAnchor({
+        id,
+        name: `Anchor @ ${ll.lat.toFixed(1)}°N ${ll.lon.toFixed(1)}°E`,
+        lat: ll.lat,
+        lon: ll.lon,
+      });
+      computeMinDist(id);
+      setPlacing(false);
+      rebuildAnchorCards();
+      refresh({ animate: true });
+    }
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    if (!state.dragId) setHover(null);
+  });
+
+  // ---- verifier parameter controls ----------------------------------------
+
+  const allowanceEl = $("#allowance");
+  function syncAllowanceLabel() {
+    const v = Number(allowanceEl.value);
+    $("#allowance-val").textContent = `${v.toFixed(3)} ms · −${Math.round(v * 150)} km`;
+  }
+  allowanceEl.addEventListener("input", () => {
+    engine.setEvaluatorParams({ allowance: Number(allowanceEl.value) });
+    syncAllowanceLabel();
+    refresh({ animate: false });
+  });
+
+  const interiorEl = $("#interior");
+  function syncInteriorLabel() {
+    $("#interior-val").textContent = `${Number(interiorEl.value).toFixed(1)} ms`;
+  }
+  interiorEl.addEventListener("input", () => {
+    engine.setEvaluatorParams({ assumed_interior_mean: Number(interiorEl.value) });
+    syncInteriorLabel();
+    refresh({ animate: false });
+  });
+
+  function wireSeg(sel, apply) {
+    const seg = $(sel);
+    seg.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      for (const x of seg.querySelectorAll("button")) x.classList.toggle("active", x === b);
+      apply(b.dataset.v);
+    });
+    return {
+      set(v) {
+        for (const x of seg.querySelectorAll("button"))
+          x.classList.toggle("active", x.dataset.v === v);
+      },
+    };
+  }
+
+  const bundleSeg = wireSeg("#bundle-seg", (v) => {
+    engine.setEvaluatorParams({ bundleMode: v });
+    refresh({ animate: true });
+  });
+
+  const attackSeg = wireSeg("#attack-seg", (v) => {
+    engine.setSimulator({ attack: v });
+  });
+
+  const deltaEl = $("#delta-att");
+  const syncDeltaLabel = () => {
+    $("#delta-att-val").textContent = `${Number(deltaEl.value).toFixed(3)} ms`;
+  };
+  deltaEl.addEventListener("input", () => {
+    engine.setSimulator({ delta_att: Number(deltaEl.value) });
+    syncDeltaLabel();
+  });
+
+  const noiseEl = $("#path-noise");
+  const syncNoiseLabel = () => {
+    $("#path-noise-val").textContent = `${Number(noiseEl.value).toFixed(2)} ms`;
+  };
+  noiseEl.addEventListener("input", () => {
+    engine.setSimulator({ path_noise_mean: Number(noiseEl.value) });
+    syncNoiseLabel();
+  });
+
+  // ---- interval controls --------------------------------------------------
+
+  function applyInterval() {
+    const s = parseHM($("#int-start").value) ?? NOON;
+    const e2 = parseHM($("#int-end").value) ?? NOON + 300e3;
+    engine.setAssessmentInterval(s, e2 + 59_999); // closed interval, minute granularity
+    refresh({ animate: true });
+  }
+  $("#int-start").addEventListener("change", applyInterval);
+  $("#int-end").addEventListener("change", applyInterval);
+
+  // ---- display controls ---------------------------------------------------
+
+  const gridSeg = wireSeg("#grid-seg", (v) => {
+    rebuildGrid(v, Number($("#grid-res").value));
+  });
+
+  const gridResEl = $("#grid-res");
+  gridResEl.addEventListener("change", () => {
+    rebuildGrid(currentShape(), Number(gridResEl.value));
+  });
+  gridResEl.addEventListener("input", () => syncGridLabels(Number(gridResEl.value)));
+
+  const currentShape = () => engine.getGrid().shape;
+
+  function syncGridLabels(n = engine.getGrid().n) {
+    const g = engine.getGrid();
+    $("#grid-res-val").textContent = `${n} × ${n}`;
+    $("#grid-val").textContent = `${g.cellCount.toLocaleString("en-US")} cells`;
+  }
+
+  function rebuildGrid(shape, n) {
+    engine.rebuildGrid({ shape, n });
+    renderer.setGrid(engine.getGrid());
+    displayT = null; // sizes changed: snap, don't tween across lattices
+    for (const id of state.minDist.keys()) computeMinDist(id);
+    syncGridLabels();
+    gridSeg.set(shape);
+    refresh({ animate: false });
+  }
+
+  // ramp selector
+  {
+    const row = $("#ramp-row");
+    row.innerHTML = RAMP_NAMES.map(
+      (name) =>
+        `<button data-ramp="${name}" type="button"><span class="swatch" style="background:${rampGradientCSS(name)}"></span><span class="rname">${name}</span></button>`
+    ).join("");
+    row.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      state.ramp = b.dataset.ramp;
+      for (const x of row.querySelectorAll("button"))
+        x.classList.toggle("active", x === b);
+      renderer.setRamp(state.ramp);
+      $("#legend-bar").style.background = rampGradientCSS(state.ramp);
+      if (displayT) {
+        renderer.updateHeat(displayT);
+        drawScene();
+      }
+    });
+    row.querySelector(`button[data-ramp="viridis"]`).classList.add("active");
+    $("#legend-bar").style.background = rampGradientCSS("viridis");
+  }
+
+  // ---- top bar ------------------------------------------------------------
+
+  $("#reveal-truth").addEventListener("change", (e) => {
+    state.revealTruth = e.target.checked;
+    drawScene();
+  });
+
+  $("#reset-btn").addEventListener("click", () => loadPreset(state.presetId));
+
+  {
+    const chips = $("#preset-chips");
+    chips.innerHTML = PRESETS.map(
+      (p, i) => `<button class="chip" data-preset="${p.id}" type="button">${i + 1} · ${esc(p.name)}</button>`
+    ).join("");
+    chips.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (b) loadPreset(b.dataset.preset);
+    });
+  }
+
+  function loadPreset(id) {
+    const preset = engine.loadPreset(id);
+    state.presetId = id;
+    state.clockMs = NOON;
+    state.hoverId = null;
+    state.minDist.clear();
+    for (const a of engine.getAnchors()) computeMinDist(a.id);
+    setPlacing(false);
+
+    // interval back to the preset default (PROMPT.md's example window)
+    $("#int-start").value = "12:00";
+    $("#int-end").value = "12:05";
+    engine.setAssessmentInterval(NOON, NOON + 300e3 + 59_999);
+
+    // reveal truth where the preset's lesson needs it (the allowance attack)
+    state.revealTruth = id === "allowance";
+    $("#reveal-truth").checked = state.revealTruth;
+
+    // sync controls to engine state
+    const ev = engine.getEvaluatorParams();
+    allowanceEl.value = ev.allowance;
+    syncAllowanceLabel();
+    interiorEl.value = ev.assumed_interior_mean;
+    syncInteriorLabel();
+    bundleSeg.set(ev.bundleMode);
+    const sim = engine.getSimulator();
+    attackSeg.set(sim.attack);
+    deltaEl.value = sim.delta_att;
+    syncDeltaLabel();
+    noiseEl.value = sim.path_noise_mean;
+    syncNoiseLabel();
+
+    // chips + caption
+    for (const b of $("#preset-chips").querySelectorAll("button"))
+      b.classList.toggle("active", b.dataset.preset === id);
+    $("#preset-caption").textContent = preset.caption;
+
+    // anatomy panel accompanies preset 1
+    $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";
+
+    displayT = null; // fresh scenario: snap to its (uniform) prior
+    rebuildAnchorCards();
+    refresh({ animate: false });
+  }
+
+  // ---- environment listeners ----------------------------------------------
+
+  const ro = new ResizeObserver(() => drawScene());
+  ro.observe(canvas.parentElement);
+
+  const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onTheme = () => {
+    renderer.refreshTheme();
+    drawScene();
+  };
+  if (darkMq.addEventListener) darkMq.addEventListener("change", onTheme);
+
+  // ---- boot ---------------------------------------------------------------
+
+  syncGridLabels();
+  loadPreset("baseline");
+}

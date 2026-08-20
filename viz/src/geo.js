@@ -48,6 +48,26 @@ export function project(lat, lon) {
   };
 }
 
+// Great-circle destination: from {lat, lon} (degrees), travel distKm along
+// initial bearing bearingDeg (0 = north, clockwise). Used to draw exclusion
+// circles as true great-circle loci rather than projected-plane circles.
+export function destination(lat, lon, bearingDeg, distKm) {
+  const phi1 = lat * RAD;
+  const lam1 = lon * RAD;
+  const theta = bearingDeg * RAD;
+  const d = distKm / R_EARTH;
+  const sinPhi2 =
+    Math.sin(phi1) * Math.cos(d) + Math.cos(phi1) * Math.sin(d) * Math.cos(theta);
+  const phi2 = Math.asin(Math.max(-1, Math.min(1, sinPhi2)));
+  const lam2 =
+    lam1 +
+    Math.atan2(
+      Math.sin(theta) * Math.sin(d) * Math.cos(phi1),
+      Math.cos(d) - Math.sin(phi1) * sinPhi2
+    );
+  return { lat: phi2 * DEG, lon: ((lam2 * DEG + 540) % 360) - 180 };
+}
+
 // {x, y} km -> {lat, lon} degrees. Inverse of project.
 export function unproject(x, y) {
   const rho = Math.hypot(x, y);
