@@ -101,3 +101,53 @@ following those.
 19. Assumptions readout (mirrors Q): posture assumed (always "compliant"),
     allowance, trust summary, interval, prior. Hardware binding and signature
     soundness live in the static info panel.
+
+## Phase 2 (build) refinements
+
+20. **Interior mean lands at 1.2 ms, not the hoped-for flatter value.** Item
+    7's target ("interior likelihood ratio between the fiber ring and a cell
+    500 km inside it modest, say < 3x") is mathematically incompatible with
+    the evasive preset's honest-branch truth preference: < 3x needs
+    mu >= 4.5 ms, at which point the four honest anchors' combined
+    Tallinn-vs-St-Petersburg discrimination drops under the mass thresholds
+    the tests (and result 5's honest branch) require. Measured sweep over
+    mu in [0.5, 3.0]: `assumed_interior_mean = 1.2 ms` is the compromise --
+    single-receipt interior decays with an e-fold length of
+    mu*v_fiber/2 ~ 122 km (broad glow, ~59x over 500 km, vs ~10^14 under the
+    old effective 0.15 ms), while the evasive-preset orderings survive. The
+    parameter replaces the evaluator-side `assumed_delta_att` +
+    `assumed_path_noise_mean` pair, which had no other role.
+21. **Preset 5 trust staging carries the fabrication demo.** Telia Tallinn is
+    staged at adversary pi 0.03 (the verifier's most credible witness --
+    believed adverse to the attester's operator, hence unlikely to fabricate
+    in its favor) and the three regional anchors at ally pi 0.30. This
+    concentrates honest discrimination in the anchor the fabrication flips,
+    so the fooled posterior clears the remaining honest anchors' truth
+    preference. Without the staging (all anchors neutral 0.10), fabrication
+    cannot win the mass comparison at any interior mean that keeps the honest
+    branch intact. PROMPT.md's own preset-5 text puts pi staging in play
+    ("or use the ally preset").
+22. **Two Phase-1 evasive margins recalibrated for the flat interior** (the
+    behavioral claims are unchanged): honest-branch truth preference
+    threshold 10x -> 5x (measured ~7x); allowance-flip odds threshold
+    20x -> 10x (measured ~17x); the branch-B side clause
+    `massDeclB > 2 * massDecl0` dropped -- with a flat interior the honest
+    posterior already spreads mass near declared, so the flip is measured by
+    the odds ratio and the decl > true ordering, not by absolute mass growth.
+23. **Fabrication semantics.** A dishonest anchor's probe never measures the
+    attester: it draws `rtt = 2 * d_declared / v_fiber + delta_att_true +
+    Exp(path_noise_mean)` -- an honest-looking receipt for the declared spot.
+    One-sidedness applies to the fabricated story, not to true propagation;
+    fabricated receipts may (and in the test provably do) fall below
+    `2 * d_true / v_fiber`. Simulator-side flag (`setAnchorDishonest`),
+    cleared by `loadPreset`; attack modes (inflation/deflation) do not apply
+    to a fabricating anchor, whose receipt ignores the attester entirely.
+24. **Grid-resolution caveat on the fabrication demo.** A fabricating anchor
+    ~3 km from the declared spot invents receipts so small that its v_c
+    exclusion circle is ~10-25 km -- near the 160x160 grid's 16.25 km cell
+    pitch. With many fabricated probes rtt_min can shrink the circle below
+    the largest cell-center gap, leaving zero interior cells; the anchor's
+    field then degrades to uninformative (all-floor, mixture flat) rather
+    than misleading. Harmless in the staged demo (8 probes), but Phase 3
+    should sanity-check heavy repeated probing of the dishonest anchor in
+    the UI at coarse resolutions.

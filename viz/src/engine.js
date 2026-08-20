@@ -122,16 +122,24 @@ export const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Distrust the nearest anchor or crank the allowance and the assessment can be fooled.",
+      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and the assessment is fooled -- raising its pi is the defense.",
     declared: TALLINN,
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
     allowance: 0,
+    // Trust staging (Phase 2, DECISIONS.md item 8): the verifier rates the
+    // Telia Tallinn anchor an adversary of the attester's operator -- the most
+    // credible kind of witness, pi 0.03 -- while the three regional anchors
+    // are rated allies (pi 0.30). The demo: Telia is secretly colluding; flip
+    // its fabrication toggle and the verifier's own trust allocation sells the
+    // lie. The staging also concentrates honest discrimination in the anchor
+    // the fabrication removes, which is what lets the fooled posterior clear
+    // the honest anchors' remaining truth preference.
     anchors: [
-      { facility: "telia-tallinn" },
-      { facility: "hetzner-helsinki" },
-      { facility: "gcp-hamina" },
-      { facility: "aws-stockholm" },
+      { facility: "telia-tallinn", pi: 0.03 },
+      { facility: "hetzner-helsinki", pi: 0.3 },
+      { facility: "gcp-hamina", pi: 0.3 },
+      { facility: "aws-stockholm", pi: 0.3 },
     ],
   },
 ];
@@ -290,6 +298,7 @@ export function createEngine(options = {}) {
 
   function removeAnchor(id) {
     anchors.delete(id);
+    sim.dishonestAnchors.delete(id);
   }
 
   // Moving an anchor invalidates the geometry its old receipts were measured
@@ -327,6 +336,7 @@ export function createEngine(options = {}) {
     path_noise_mean: 0.1, // ms, mean of one-sided exponential route/queueing excess
     attack: "none", // 'none' | 'inflation' | 'deflation'
     deflation_delta_att: 0.005, // ms, evasive attester's optimized processing delay
+    dishonestAnchors: new Set(), // anchor ids that FABRICATE receipts (paper s.7)
   };
 
   function setSimulator(patch) {
@@ -342,12 +352,37 @@ export function createEngine(options = {}) {
     if (patch.deflation_delta_att != null) sim.deflation_delta_att = patch.deflation_delta_att;
   }
 
+  // Simulator-side anchor dishonesty (paper s.7: a dishonest anchor "can
+  // fabricate arbitrary evidence"). A dishonest anchor never measures the
+  // attester at all: its probe INVENTS a receipt that looks like an honest
+  // measurement of the DECLARED location --
+  //   rtt = 2 * d_declared / v_fiber + delta_att_true + Exp(path_noise_mean)
+  // The one-sidedness invariant applies to its fabricated story, not to true
+  // propagation: a fabricated receipt MAY fall below 2 * d_true / v_fiber.
+  // That violation of physics is exactly what makes anchor honesty a standing
+  // assumption rather than a measured quantity. This is a SIMULATOR control
+  // (world truth), never a verifier input; the evaluator's only defense is pi.
+  function setAnchorDishonest(id, dishonest) {
+    mustGet(id); // validate
+    if (dishonest) sim.dishonestAnchors.add(id);
+    else sim.dishonestAnchors.delete(id);
+  }
+
   // One probe -> one signed receipt. rtt = 2 d_true / v_fiber + delta_att_eff
   // + artificial_delay + Exp(path_noise_mean); artificial_delay >= 0, so no
   // receipt is ever below 2 d_true / v_fiber (one-sidedness).
   function probe(anchorId, timestampMs) {
     const a = mustGet(anchorId);
     const anchorPos = { lat: a.lat, lon: a.lon };
+    if (sim.dishonestAnchors.has(anchorId)) {
+      // Fabrication: an honest-looking receipt for the DECLARED spot.
+      const dDecl = haversineKm(anchorPos, sim.declared);
+      const noise = -sim.path_noise_mean * Math.log(1 - rng());
+      const rtt = (2 * dDecl) / V_FIBER + sim.delta_att + noise;
+      const receipt = { anchorId, rtt, timestampMs, fabricated: true };
+      ingestReceipt(receipt);
+      return receipt;
+    }
     const dTrue = haversineKm(anchorPos, sim.trueLocation);
     let delta = sim.delta_att;
     let artificial = 0;
@@ -376,8 +411,19 @@ export function createEngine(options = {}) {
 
   const ev = {
     allowance: 0, // ms
-    assumed_delta_att: 0.05, // ms, part of the assumed excess-delay mean
-    assumed_path_noise_mean: 0.1, // ms
+    // Assumed mean of the one-sided interior excess (route stretch + queueing
+    // + processing), ms. DELIBERATELY CONSERVATIVE and decoupled from the
+    // simulator's true noise (DECISIONS.md item 7): the paper (s.4) says the
+    // interior carries "almost nothing", so the evaluator assumes a slow tail
+    // rather than sharpening belief onto the fiber ring. Default tuned
+    // numerically (Phase 2): large enough that a single receipt's interior
+    // reads as a broad glow rather than a thin ring (e-fold length
+    // mu * v_fiber / 2 ~ 120 km against typical 300-500 km circles), small
+    // enough that multi-anchor discrimination in the evasive preset survives.
+    // A literally flat interior (< 3x over 500 km) needs mu >= 4.5 ms, which
+    // erases the honest-anchor truth preference the evasive preset teaches;
+    // 1.2 ms is the measured compromise (see viz/DECISIONS.md item 7).
+    assumed_interior_mean: 1.2, // ms
     bundleMode: "rtt-min", // 'rtt-min' (default; paper s.6 redundancy discounting) | 'product' (PROMPT.md)
     floorRel: 1e-6, // exclusion floor, relative to the interior peak f(0)
     interval: { startMs: -Infinity, endMs: Infinity }, // assessment interval T
@@ -443,8 +489,8 @@ export function createEngine(options = {}) {
   //                     1e-6 relative to the interior peak f(0) = 1/mu
   //   inside  (d <= r): L = f(excess), excess = rtt - 2 d / v_fiber - allowance
   // f: for excess >= 0 the one-sided exponential density with mean
-  // mu = assumed_path_noise_mean + assumed_delta_att (floored at the epsilon
-  // floor so no single receipt drives a cell below the residual).
+  // mu = assumed_interior_mean (floored at the epsilon floor so no single
+  // receipt drives a cell below the residual).
   //
   // Negative excess -- cells between the fiber ring and the lightspeed ring,
   // reachable only by straighter-than-assumed routes or faster media (paper
@@ -458,7 +504,7 @@ export function createEngine(options = {}) {
   // breaks the trust-cap saturation under 'product' bundling. Documented as a
   // judgment call.)
   function accumulateReceiptField(S, dist, rtt, accumulate) {
-    const mu = ev.assumed_path_noise_mean + ev.assumed_delta_att;
+    const mu = ev.assumed_interior_mean;
     const logPeak = -Math.log(mu);
     const logFloorOff = Math.log(ev.floorRel); // negative, e.g. -13.8
     const logFloor = logFloorOff + logPeak;
@@ -671,6 +717,7 @@ export function createEngine(options = {}) {
       typeof presetOrId === "string" ? PRESETS.find((p) => p.id === presetOrId) : presetOrId;
     if (!preset) throw new Error(`unknown preset: ${presetOrId}`);
     anchors.clear();
+    sim.dishonestAnchors.clear();
     for (const spec of preset.anchors) {
       addAnchor({ facility: spec.facility, pi: spec.pi });
     }
@@ -752,7 +799,10 @@ export function createEngine(options = {}) {
       ...sim,
       trueLocation: { ...sim.trueLocation },
       declared: { ...sim.declared },
+      dishonestAnchors: [...sim.dishonestAnchors],
     }),
+    setAnchorDishonest,
+    isAnchorDishonest: (id) => sim.dishonestAnchors.has(id),
     probe,
     probeAll,
     setSeed: (s) => {

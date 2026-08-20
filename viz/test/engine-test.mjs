@@ -119,7 +119,7 @@ section("exclusion geometry");
 
   const g = eng.getGrid();
   const trueIdx = eng.nearestCellIndex(sim.trueLocation.lat, sim.trueLocation.lon);
-  const mu = 0.1 + 0.05;
+  const mu = eng.getEvaluatorParams().assumed_interior_mean;
   const logFloor = Math.log(1e-6) - Math.log(mu);
 
   let floorOk = true;
@@ -202,8 +202,7 @@ section("trust cap: pi = 0.3 saturates near log2(1/0.3) bits (both bundle modes)
   });
   eng.setEvaluatorParams({
     allowance: 0,
-    assumed_delta_att: 0,
-    assumed_path_noise_mean: 2.0, // conservative verifier: slow assumed tail
+    assumed_interior_mean: 2.0, // conservative verifier: slow assumed tail
   });
   const refIdx = eng.nearestCellIndex(60.404, 25.106); // ~1800 km away: always excluded
 
@@ -302,9 +301,13 @@ section("evasive preset: declared Tallinn, true St Petersburg");
     massDecl0 < 0.05,
     `mass near declared = ${fmt(massDecl0, 4)}`
   );
+  // Margin recalibrated in Phase 2: the conservative interior (DECISIONS.md
+  // item 7, assumed_interior_mean 1.2 ms vs the old effective 0.15 ms)
+  // deliberately flattens single-anchor discrimination, so the honest-branch
+  // truth preference is ~7x rather than the >10x the sharp interior gave.
   check(
     "honest anchors + allowance 0: posterior prefers the truth",
-    massTrue0 > 10 * massDecl0,
+    massTrue0 > 5 * massDecl0,
     `true ${fmt(massTrue0, 4)} vs decl ${fmt(massDecl0, 4)}`
   );
 
@@ -344,10 +347,128 @@ section("evasive preset: declared Tallinn, true St Petersburg");
     `decl ${fmt(massDeclB, 4)} vs true ${fmt(massTrueB, 4)}`
   );
   const oddsB = massDeclB / massTrueB;
+  // Margin recalibrated in Phase 2 (see above): with the flat interior the
+  // honest posterior already spreads more mass near declared, so the
+  // allowance's odds flip is ~17x rather than >20x, and the absolute
+  // mass-near-declared comparison (massDeclB > 2 * massDecl0) no longer
+  // measures the flip -- the odds ratio and the decl > true ordering do.
   check(
-    "raising the allowance flips the declared:true odds by more than 20x",
-    oddsB > 20 * odds0 && massDeclB > 2 * massDecl0,
+    "raising the allowance flips the declared:true odds by more than 10x",
+    oddsB > 10 * odds0,
     `odds ${fmt(oddsB, 4)} vs honest ${fmt(odds0, 4)}; mass ${fmt(massDeclB, 4)} vs ${fmt(massDecl0, 4)}`
+  );
+}
+
+// ---------------------------------------------------------------------------
+section("anchor dishonesty: fabrication fools a trusting evaluator (DECISIONS 8)");
+// ---------------------------------------------------------------------------
+{
+  const eng = createEngine({ seed: 43 });
+  const preset = eng.loadPreset("evasive");
+  const declared = preset.declared;
+  const trueLoc = preset.trueLocation;
+
+  // The preset stages the trust story: Telia Tallinn rated an adversary of
+  // the attester's operator (pi 0.03 -- the verifier's most trusted witness),
+  // the three regional anchors rated allies (pi 0.30).
+  const telia = eng.getAnchors().find((a) => a.id === "telia-tallinn");
+  check("preset stages Telia Tallinn at adversary pi 0.03", Math.abs(telia.pi - 0.03) < 1e-9);
+
+  // Flip the world: Telia secretly fabricates receipts consistent with the
+  // DECLARED location. The evaluator still trusts it at pi 0.03.
+  eng.setAnchorDishonest("telia-tallinn", true);
+  check("dishonesty flag reads back", eng.isAnchorDishonest("telia-tallinn"));
+  for (let k = 0; k < 8; k++) eng.probeAll(1000 + k);
+
+  // Fabricated receipts violate the true-distance floor -- that is the point:
+  // physics binds honest measurement, not invention.
+  const dTrueTelia = haversineKm({ lat: telia.lat, lon: telia.lon }, trueLoc);
+  const floorTelia = (2 * dTrueTelia) / V_FIBER;
+  const teliaRtts = eng.getAnchorReceipts("telia-tallinn").map((r) => r.rtt);
+  check(
+    "fabricated receipts fall below 2*d_true/v_fiber (impossible for honest measurement)",
+    Math.min(...teliaRtts) < floorTelia,
+    `min rtt ${fmt(Math.min(...teliaRtts))} vs floor ${fmt(floorTelia)}`
+  );
+
+  // The assessment is fooled: the posterior's peak sits on the declared city
+  // and near-declared mass beats near-truth mass.
+  const post = eng.computePosterior();
+  const g = eng.getGrid();
+  let pk = 0;
+  for (let i = 0; i < post.length; i++) if (post[i] > post[pk]) pk = i;
+  const peakToDecl = haversineKm({ lat: g.lats[pk], lon: g.lons[pk] }, declared);
+  check("posterior peak lands on the declared city", peakToDecl < 50, `${fmt(peakToDecl, 0)} km from declared`);
+  const mD = eng.massNear(declared.lat, declared.lon, 25, post);
+  const mT = eng.massNear(trueLoc.lat, trueLoc.lon, 25, post);
+  check(
+    "mass near declared exceeds mass near the truth (evaluator fooled)",
+    mD > mT,
+    `decl ${fmt(mD, 4)} vs true ${fmt(mT, 4)}`
+  );
+
+  // The defense: stop trusting the fabricator. Raising its pi to 0.3 caps its
+  // contribution at log2(1/0.3) bits and the honest anchors' truth preference
+  // reasserts itself.
+  eng.setAnchorPi("telia-tallinn", 0.3);
+  const post3 = eng.computePosterior();
+  const mD50 = eng.massNear(declared.lat, declared.lon, 50, post3);
+  const mT50 = eng.massNear(trueLoc.lat, trueLoc.lon, 50, post3);
+  const mD150 = eng.massNear(declared.lat, declared.lon, 150, post3);
+  const mT150 = eng.massNear(trueLoc.lat, trueLoc.lon, 150, post3);
+  check(
+    "raising the fabricator's pi to 0.3 restores the truth ordering",
+    mT50 > mD50 && mT150 > mD150,
+    `R50 decl ${fmt(mD50, 4)} vs true ${fmt(mT50, 4)}; R150 decl ${fmt(mD150, 4)} vs true ${fmt(mT150, 4)}`
+  );
+
+  // Presets describe worlds: reloading one resets simulator-side dishonesty.
+  eng.loadPreset("evasive");
+  check("loadPreset clears the dishonesty flag", !eng.isAnchorDishonest("telia-tallinn"));
+}
+
+// ---------------------------------------------------------------------------
+section("conservative interior: single receipt reads as a broad glow (DECISIONS 7)");
+// ---------------------------------------------------------------------------
+{
+  // One receipt, one anchor. The interior likelihood between the fiber ring
+  // and a cell 500 km inside it must be a gentle gradient, not a cliff: under
+  // the old effective mean (0.15 ms) this ratio was ~e^33 (~10^14); with the
+  // conservative assumed_interior_mean (1.2 ms) it is e^(4.9/1.2) ~ 59.
+  // (A literally flat interior, < 3x over 500 km, would need mu >= 4.5 ms and
+  // erase the evasive preset's honest truth preference -- see DECISIONS.md.)
+  const eng = createEngine({ seed: 47 });
+  eng.addAnchor({ facility: "hetzner-falkenstein" });
+  const rtt = 6.0; // ms -> fiber ring at 612 km, lightspeed ring at 900 km
+  eng.addReceipt({ anchorId: "hetzner-falkenstein", rtt, timestampMs: 1000 });
+  const { S } = eng.getAnchorField("hetzner-falkenstein");
+  const dist = eng.getAnchorDistField("hetzner-falkenstein");
+  const rFiber = (V_FIBER * rtt) / 2;
+  const pick = (target) => {
+    let best = -1;
+    let bestErr = Infinity;
+    for (let i = 0; i < dist.length; i++) {
+      const err = Math.abs(dist[i] - target);
+      if (err < bestErr) {
+        bestErr = err;
+        best = i;
+      }
+    }
+    return best;
+  };
+  const iRing = pick(rFiber - 10);
+  const iDeep = pick(rFiber - 510);
+  const mu = eng.getEvaluatorParams().assumed_interior_mean;
+  const logFloor = Math.log(1e-6) - Math.log(mu);
+  const ratio = Math.exp(S[iRing] - S[iDeep]);
+  check(
+    "interior ratio over 500 km stays under 100x",
+    ratio > 1 && ratio < 100,
+    `ratio ${fmt(ratio, 1)} (ring d=${fmt(dist[iRing], 0)} km, deep d=${fmt(dist[iDeep], 0)} km)`
+  );
+  check(
+    "both interior cells sit far above the epsilon floor",
+    S[iRing] > logFloor + 5 && S[iDeep] > logFloor + 5
   );
 }
 
