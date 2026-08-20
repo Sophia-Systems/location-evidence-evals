@@ -601,6 +601,7 @@ export function buildApp(root) {
   infoPop.setAttribute("role", "tooltip");
   document.body.appendChild(infoPop);
   let infoBtn = null; // the .info button the popover is showing for
+  let infoPinned = false; // opened by click/tap: survives pointer-out; closed by click/Escape/outside
 
   function positionInfoPop(btn) {
     const M = 8; // px viewport margin
@@ -629,29 +630,49 @@ export function buildApp(root) {
 
   function hideInfoPop() {
     infoBtn = null;
+    infoPinned = false;
     infoPop.classList.remove("show");
   }
 
   // Delegated: anchor cards are rebuilt wholesale, so per-button listeners
-  // would leak or vanish. Hover and keyboard focus both show the popover.
+  // would leak or vanish. Hover and keyboard focus show the popover
+  // transiently; a click PINS it (idempotent-show), a second click on the
+  // same button -- or a click anywhere else, Escape, scroll, resize --
+  // dismisses it. The pin flag is what keeps a tap from being a no-op: on
+  // touch, pointerover fires immediately before click in the SAME tap, so a
+  // plain toggle would hide what the tap's own hover just showed.
   document.addEventListener("pointerover", (e) => {
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
     if (btn) {
-      if (btn !== infoBtn) showInfoPop(btn);
-    } else if (infoBtn) hideInfoPop();
+      if (btn !== infoBtn) {
+        showInfoPop(btn);
+        infoPinned = false;
+      }
+    } else if (infoBtn && !infoPinned) hideInfoPop();
   });
   document.addEventListener("focusin", (e) => {
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
-    if (btn) showInfoPop(btn);
-    else if (infoBtn) hideInfoPop();
+    if (btn) {
+      if (btn !== infoBtn) {
+        showInfoPop(btn);
+        infoPinned = false;
+      }
+    } else if (infoBtn && !infoPinned) hideInfoPop();
   });
   document.addEventListener("click", (e) => {
-    // tap support: a click on an info button toggles its popover
+    // tap/click: idempotent-show that pins; a second click on the pinned
+    // button (or any outside click) dismisses
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
     if (btn) {
-      if (infoBtn === btn && infoPop.classList.contains("show")) hideInfoPop();
-      else showInfoPop(btn);
-    }
+      if (infoBtn === btn && infoPinned) hideInfoPop();
+      else {
+        showInfoPop(btn);
+        infoPinned = true;
+      }
+    } else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && infoBtn) hideInfoPop();
   });
   // scrolling or resizing invalidates the stored position
   document.addEventListener("scroll", () => hideInfoPop(), true);

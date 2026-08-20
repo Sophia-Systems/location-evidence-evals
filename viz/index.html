@@ -3051,6 +3051,7 @@ function buildApp(root) {
   infoPop.setAttribute("role", "tooltip");
   document.body.appendChild(infoPop);
   let infoBtn = null; // the .info button the popover is showing for
+  let infoPinned = false; // opened by click/tap: survives pointer-out; closed by click/Escape/outside
 
   function positionInfoPop(btn) {
     const M = 8; // px viewport margin
@@ -3077,26 +3078,40 @@ function buildApp(root) {
 
   function hideInfoPop() {
     infoBtn = null;
+    infoPinned = false;
     infoPop.classList.remove("show");
   }
 
   document.addEventListener("pointerover", (e) => {
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
     if (btn) {
-      if (btn !== infoBtn) showInfoPop(btn);
-    } else if (infoBtn) hideInfoPop();
+      if (btn !== infoBtn) {
+        showInfoPop(btn);
+        infoPinned = false;
+      }
+    } else if (infoBtn && !infoPinned) hideInfoPop();
   });
   document.addEventListener("focusin", (e) => {
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
-    if (btn) showInfoPop(btn);
-    else if (infoBtn) hideInfoPop();
+    if (btn) {
+      if (btn !== infoBtn) {
+        showInfoPop(btn);
+        infoPinned = false;
+      }
+    } else if (infoBtn && !infoPinned) hideInfoPop();
   });
   document.addEventListener("click", (e) => {
     const btn = e.target instanceof Element ? e.target.closest(".info") : null;
     if (btn) {
-      if (infoBtn === btn && infoPop.classList.contains("show")) hideInfoPop();
-      else showInfoPop(btn);
-    }
+      if (infoBtn === btn && infoPinned) hideInfoPop();
+      else {
+        showInfoPop(btn);
+        infoPinned = true;
+      }
+    } else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && infoBtn) hideInfoPop();
   });
   document.addEventListener("scroll", () => hideInfoPop(), true);
   window.addEventListener("resize", () => hideInfoPop());
