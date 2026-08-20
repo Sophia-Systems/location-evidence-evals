@@ -53,37 +53,46 @@ const ST_PETERSBURG = { lat: 59.934, lon: 30.335 };
 
 // Scenario presets (PROMPT.md "Scenario presets") as data. `anchors` lists
 // facility ids with optional per-anchor pi overrides (default: neutral).
+//
+// Trust staging (DECISIONS.md item 26): presets whose lesson is ERASURE
+// (baseline, geometry, allowance) stage every anchor highly trusted at
+// pi = 0.02 (~5.6-bit ceiling, ~50x per-anchor outside suppression), so the
+// outside of a circle visibly drains. At the neutral 0.10 each anchor could
+// suppress outside cells by only 1/pi = 10x -- a trust haze that muddied
+// result 1. That haze is the TRUST preset's lesson, so preset 3 keeps
+// neutral 0.10 starting points; preset 5 keeps its own staging.
+const HIGH_TRUST_PI = 0.02;
 export const PRESETS = [
   {
     id: "baseline",
     name: "Baseline",
     caption:
-      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion.",
+      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
     anchors: [
-      { facility: "hetzner-helsinki" },
-      { facility: "hetzner-falkenstein" },
-      { facility: "equinix-paris" },
-      { facility: "equinix-london" },
+      { facility: "hetzner-helsinki", pi: HIGH_TRUST_PI },
+      { facility: "hetzner-falkenstein", pi: HIGH_TRUST_PI },
+      { facility: "equinix-paris", pi: HIGH_TRUST_PI },
+      { facility: "equinix-london", pi: HIGH_TRUST_PI },
     ],
   },
   {
     id: "geometry",
     name: "Geometry",
     caption:
-      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing.",
+      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
     anchors: [
-      { facility: "hetzner-helsinki" },
-      { facility: "hetzner-falkenstein" },
-      { facility: "equinix-paris" },
-      { facility: "equinix-london" },
+      { facility: "hetzner-helsinki", pi: HIGH_TRUST_PI },
+      { facility: "hetzner-falkenstein", pi: HIGH_TRUST_PI },
+      { facility: "equinix-paris", pi: HIGH_TRUST_PI },
+      { facility: "equinix-london", pi: HIGH_TRUST_PI },
     ],
   },
   {
@@ -106,16 +115,16 @@ export const PRESETS = [
     id: "allowance",
     name: "The allowance",
     caption:
-      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one.",
+      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
     anchors: [
-      { facility: "hetzner-helsinki" },
-      { facility: "hetzner-falkenstein" },
-      { facility: "equinix-paris" },
-      { facility: "equinix-london" },
+      { facility: "hetzner-helsinki", pi: HIGH_TRUST_PI },
+      { facility: "hetzner-falkenstein", pi: HIGH_TRUST_PI },
+      { facility: "equinix-paris", pi: HIGH_TRUST_PI },
+      { facility: "equinix-london", pi: HIGH_TRUST_PI },
     ],
   },
   {

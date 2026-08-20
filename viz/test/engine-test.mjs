@@ -250,6 +250,39 @@ section("trust cap: pi = 0.3 saturates near log2(1/0.3) bits (both bundle modes)
 }
 
 // ---------------------------------------------------------------------------
+section("outside floor is the trust mixture: peak/outside posterior ratio ~= 1/pi");
+// ---------------------------------------------------------------------------
+{
+  // One anchor, one receipt: with a single anchor and a uniform prior the
+  // posterior is proportional to the trust-mixed likelihood, so the ratio of
+  // the interior peak to a cell well outside the exclusion radius (and inside
+  // no other constraint) pins to
+  //   [(1-pi) Lmax + pi Lmax] / [(1-pi) L_floor + pi Lmax] ~= 1/pi
+  // (L_floor = 1e-6 x peak is negligible next to pi Lmax). The residual
+  // brightness OUTSIDE a circle is set by anchor trust, not physics -- the
+  // staging rationale of DECISIONS.md item 26; this pins the outside floor to
+  // the mixture and would catch any bug hiding beneath the staging.
+  for (const pi of [0.02, 0.1]) {
+    const eng = createEngine({ seed: 23 });
+    eng.addAnchor({ facility: "equinix-london", pi });
+    const a = eng.getAnchors()[0];
+    eng.addReceipt({ anchorId: a.id, rtt: 3.0, timestampMs: 1000 }); // r = 450 km
+    const post = eng.computePosterior();
+    let pk = 0;
+    for (let i = 0; i < post.length; i++) if (post[i] > post[pk]) pk = i;
+    const out = eng.nearestCellIndex(60.404, 25.106); // Helsinki, ~1800 km away
+    const dist = eng.getAnchorDistField(a.id);
+    check(`pi=${pi}: reference cell sits well outside the 450 km exclusion radius`, dist[out] > 1000, `${fmt(dist[out], 0)} km`);
+    const ratio = post[pk] / post[out];
+    check(
+      `pi=${pi}: interior peak / outside cell ~= 1/pi (${fmt(ratio, 2)} vs ${fmt(1 / pi, 2)})`,
+      Math.abs(ratio * pi - 1) < 0.02,
+      `ratio=${fmt(ratio, 3)}`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 section("allowance attack: allowance > true delta_att excludes the truth");
 // ---------------------------------------------------------------------------
 {
@@ -618,6 +651,21 @@ section("presets");
   }
   check("all presets load and populate 4-8 anchors", true);
   check("facility library has the 10 PROMPT.md facilities", FACILITIES.length === 10);
+
+  // Trust staging (DECISIONS.md item 26): erasure-lesson presets stage every
+  // anchor highly trusted; the trust haze debuts in preset 3.
+  for (const id of ["baseline", "geometry", "allowance"]) {
+    eng.loadPreset(id);
+    check(
+      `preset ${id} stages all anchors at pi 0.02 (erasure lesson)`,
+      eng.getAnchors().every((a) => Math.abs(a.pi - 0.02) < 1e-9)
+    );
+  }
+  eng.loadPreset("trust");
+  check(
+    "preset trust keeps neutral pi 0.10 starting points",
+    eng.getAnchors().every((a) => Math.abs(a.pi - 0.1) < 1e-9)
+  );
 }
 
 // ---------------------------------------------------------------------------

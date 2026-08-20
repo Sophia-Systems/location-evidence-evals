@@ -173,3 +173,16 @@ following those.
     mass above near-truth mass in 30/30 runs; preset 5's caption now steers
     the viewer to "probe all a few times" -- the staged, test-verified
     interaction.
+26. **Preset trust staging: erasure lessons get high-trust anchors.** Live
+    feedback (John): in the baseline preset, visible probability mass sat
+    OUTSIDE the smallest exclusion circle, muddying result 1's "a receipt
+    erases nearly everything outside a circle." Root cause: neutral pi = 0.10
+    caps each anchor's outside suppression at 1/pi = 10x -- the trust ceiling
+    correctly rendered, but that is preset 3's lesson, not preset 1's.
+    Adjudication: presets 1 (baseline), 2 (geometry), and 4 (allowance) stage
+    all anchors at pi = 0.02 (~5.6-bit ceiling, ~50x per-anchor outside
+    suppression) with a caption note; the trust haze debuts in preset 3, which
+    keeps neutral 0.10 starting points; preset 5 keeps its staging (item 21).
+    The legend's floor copy now states that residual outside brightness is set
+    by anchor trust, not physics. A numeric test pins the single-anchor
+    peak/outside posterior ratio to ~1/pi at both 0.02 and 0.10.
