@@ -600,6 +600,14 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   let movePending = null;
   let dragLastX = 0;
   let dragLastY = 0;
+  let dragDownX = 0;
+  let dragDownY = 0;
+  // Click-vs-drag threshold: pointer jitter of a few px during a click (mice,
+  // trackpads) must still read as a click -- clicking IS the primary probe
+  // interaction, and misreading it as a drag destructively clears the
+  // anchor's receipts via moveAnchor. Only cumulative displacement beyond
+  // this many px from the pointerdown position starts a drag.
+  const DRAG_THRESHOLD_PX = 4;
 
   function cancelPendingDragMove() {
     if (movePending != null) {
@@ -622,16 +630,22 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     if (id) {
       state.dragId = id;
       state.dragMoved = false;
+      dragDownX = px;
+      dragDownY = py;
       canvas.setPointerCapture(e.pointerId);
-      canvas.classList.add("dragging");
     }
   });
 
   canvas.addEventListener("pointermove", (e) => {
     const [px, py] = canvasPos(e);
     if (state.dragId) {
-      const start = !state.dragMoved;
-      state.dragMoved = true;
+      if (!state.dragMoved) {
+        // below the threshold this is still a click in progress, not a drag
+        if (Math.hypot(px - dragDownX, py - dragDownY) < DRAG_THRESHOLD_PX) return;
+        state.dragMoved = true;
+        canvas.classList.add("dragging");
+        tip.classList.remove("show");
+      }
       dragLastX = px;
       dragLastY = py;
       if (movePending == null) {
@@ -641,7 +655,6 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
           applyDragMove(false);
         });
       }
-      if (start) tip.classList.remove("show");
       return;
     }
     const id = renderer.anchorAt(px, py, sceneData().anchors);
