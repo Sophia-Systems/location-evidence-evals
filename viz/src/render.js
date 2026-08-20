@@ -196,6 +196,11 @@ export function createRenderer(canvas) {
     return path;
   }
 
+  // The declared star is translucent-filled and outline-defined so the
+  // posterior field stays readable beneath it: in the fabrication demo the
+  // fooled posterior's peak sits within a few cells of the declared spot,
+  // and an opaque marker would hide exactly the evidence the demo exists to
+  // show.
   function drawStar(px, py, r, color) {
     ctx.save();
     ctx.beginPath();
@@ -208,13 +213,16 @@ export function createRenderer(canvas) {
       else ctx.lineTo(x, y);
     }
     ctx.closePath();
-    ctx.fillStyle = color;
     ctx.strokeStyle = theme.halo;
-    ctx.lineWidth = 1.5;
-    ctx.shadowColor = "rgba(0,0,0,0.35)";
-    ctx.shadowBlur = 4;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.9;
+    ctx.stroke(); // halo pass keeps the glyph legible on any field
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = color;
     ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.restore();
   }
