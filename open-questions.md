@@ -1,6 +1,6 @@
 # Open questions
 
-Running list for the evidence-evaluation layer. Section references point at [`paper/evidence-evaluation.md`](paper/evidence-evaluation.md).
+Running list for the evidence-evaluation stage. Section references point at [`paper/evidence-evaluation.md`](paper/evidence-evaluation.md).
 
 ## 1. Anonymous mutual pinging as collusion detection
 
@@ -12,7 +12,7 @@ Whether a dishonest anchor would fabricate evidence for or against a declaration
 
 ## 3. Safety of joint attester-processing-delay estimation
 
-Solving for the shared `δ_proc` across anchors (GPS clock-bias style) tightens every exclusion radius under the compliant-attester assumption, but an evasive attester can answer one favored anchor quickly and the rest slowly, inflating the estimate and manufacturing proximity. Is there an estimator that captures some of the tightening while bounding the manufactured-proximity attack -- for example, using only the fastest anchor as reference, or capping the subtraction at a provable minimum? (Section 5.)
+Solving for the shared `δ_att` across anchors (GPS clock-bias style) tightens every exclusion radius under the compliant-attester assumption, but an evasive attester can answer one favored anchor quickly and the rest slowly, inflating the estimate and manufacturing proximity. Is there an estimator that captures some of the tightening while bounding the manufactured-proximity attack -- for example, using only the fastest anchor as reference, or capping the allowance at a provable minimum? (Section 5.)
 
 ## 4. Prior selection and sensitivity
 
@@ -40,4 +40,4 @@ The framework's forgery-cost condition makes the dimension load-bearing: forging
 
 ## 10. Formalizing Q and the policy weighting interface
 
-The qualifier schema in the paper's section 8 is a working draft, and identifying the right, preferably irreducible dimension set is an open problem of the broader research program ([technical risks and open unknowns](https://www.johnx.co/research/location-verification-research-agenda#technical-risks-and-open-unknowns)). What does the policy layer's weighting scheme actually need from Q, and in what machine-readable form, so the two layers can be developed against a stable interface?
+The qualifier schema in the paper's section 8 is a working draft, and identifying the right, preferably irreducible dimension set is an open problem of the broader research program ([technical risks and open unknowns](https://www.johnx.co/research/location-verification-research-agenda#technical-risks-and-open-unknowns)). What does the policy stage's weighting scheme actually need from Q, and in what machine-readable form, so the two stages can be developed against a stable interface?
