@@ -592,7 +592,28 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     return [e.clientX - r.left, e.clientY - r.top];
   }
 
+  // Drag moves are throttled through requestAnimationFrame. The queued
+  // callback must never trust its enqueue-time snapshot: it reads the LATEST
+  // pointer position (dragLastX/Y, updated on every move) and bails out if the
+  // drag ended before the frame fired -- pointerup in the same frame as the
+  // last pointermove would otherwise call moveAnchor(null, ...) and throw.
   let movePending = null;
+  let dragLastX = 0;
+  let dragLastY = 0;
+
+  function cancelPendingDragMove() {
+    if (movePending != null) {
+      cancelAnimationFrame(movePending);
+      movePending = null;
+    }
+  }
+
+  function applyDragMove(animate) {
+    const ll = renderer.cssToLatLon(dragLastX, dragLastY);
+    engine.moveAnchor(state.dragId, ll.lat, ll.lon);
+    computeMinDist(state.dragId);
+    refresh({ animate });
+  }
 
   canvas.addEventListener("pointerdown", (e) => {
     if (state.placing) return;
@@ -611,13 +632,13 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     if (state.dragId) {
       const start = !state.dragMoved;
       state.dragMoved = true;
+      dragLastX = px;
+      dragLastY = py;
       if (movePending == null) {
         movePending = requestAnimationFrame(() => {
           movePending = null;
-          const ll = renderer.cssToLatLon(px, py);
-          engine.moveAnchor(state.dragId, ll.lat, ll.lon);
-          computeMinDist(state.dragId);
-          refresh({ animate: false });
+          if (state.dragId == null) return; // released before the frame fired
+          applyDragMove(false);
         });
       }
       if (start) tip.classList.remove("show");
@@ -633,12 +654,19 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     if (state.dragId) {
       const id = state.dragId;
       const moved = state.dragMoved;
+      cancelPendingDragMove();
+      if (moved) {
+        // flush the final movement segment at the release position
+        const [px, py] = canvasPos(e);
+        dragLastX = px;
+        dragLastY = py;
+        applyDragMove(true);
+      }
       state.dragId = null;
       state.dragMoved = false;
       canvas.classList.remove("dragging");
       canvas.releasePointerCapture(e.pointerId);
       if (!moved) doProbe(id); // a click on an anchor IS the primary action
-      else refresh({ animate: true });
       return;
     }
     if (state.placing) {
@@ -656,6 +684,16 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
       rebuildAnchorCards();
       refresh({ animate: true });
     }
+  });
+
+  canvas.addEventListener("pointercancel", () => {
+    if (!state.dragId) return;
+    cancelPendingDragMove();
+    const moved = state.dragMoved;
+    state.dragId = null;
+    state.dragMoved = false;
+    canvas.classList.remove("dragging");
+    if (moved) refresh({ animate: true }); // settle where the drag left it
   });
 
   canvas.addEventListener("pointerleave", () => {
