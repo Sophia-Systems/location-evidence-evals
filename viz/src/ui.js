@@ -557,6 +557,75 @@ export function buildApp(root) {
     if (e.key === "Escape") setPlacing(false);
   });
 
+  // ---- info popover -------------------------------------------------------
+  // One shared, JS-positioned popover for every .info affordance. A pure-CSS
+  // ::after popover gets clipped by its scrolling/overflow-hiding ancestors
+  // (.controls scrolls, .map-pane hides overflow, .legend's backdrop-filter
+  // forms a containing block), so the tip lives on <body> as position: fixed
+  // and is placed from the icon's viewport rect, flipped and clamped to stay
+  // fully on-screen.
+
+  const infoPop = document.createElement("div");
+  infoPop.id = "info-pop";
+  infoPop.setAttribute("role", "tooltip");
+  document.body.appendChild(infoPop);
+  let infoBtn = null; // the .info button the popover is showing for
+
+  function positionInfoPop(btn) {
+    const M = 8; // px viewport margin
+    const r = btn.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    const pw = infoPop.offsetWidth;
+    const ph = infoPop.offsetHeight;
+    // right-align the popover to the icon, then clamp into the viewport
+    let left = r.right + 10 - pw;
+    left = Math.max(M, Math.min(left, vw - pw - M));
+    // prefer above the icon; flip below when there is no room, then clamp
+    let top = r.top - 8 - ph;
+    if (top < M) top = r.bottom + 8;
+    top = Math.max(M, Math.min(top, vh - ph - M));
+    infoPop.style.left = `${left}px`;
+    infoPop.style.top = `${top}px`;
+  }
+
+  function showInfoPop(btn) {
+    infoBtn = btn;
+    infoPop.textContent = btn.dataset.tip;
+    positionInfoPop(btn);
+    infoPop.classList.add("show");
+  }
+
+  function hideInfoPop() {
+    infoBtn = null;
+    infoPop.classList.remove("show");
+  }
+
+  // Delegated: anchor cards are rebuilt wholesale, so per-button listeners
+  // would leak or vanish. Hover and keyboard focus both show the popover.
+  document.addEventListener("pointerover", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) {
+      if (btn !== infoBtn) showInfoPop(btn);
+    } else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("focusin", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) showInfoPop(btn);
+    else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("click", (e) => {
+    // tap support: a click on an info button toggles its popover
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) {
+      if (infoBtn === btn && infoPop.classList.contains("show")) hideInfoPop();
+      else showInfoPop(btn);
+    }
+  });
+  // scrolling or resizing invalidates the stored position
+  document.addEventListener("scroll", () => hideInfoPop(), true);
+  window.addEventListener("resize", () => hideInfoPop());
+
   // ---- map interaction ----------------------------------------------------
 
   const tip = $("#map-tip");

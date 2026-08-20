@@ -583,12 +583,17 @@ button {
   border-color: var(--accent);
 }
 
-.info::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: -10px;
+/* The popover itself is a single JS-positioned element appended to <body>
+   (see ui.js): position: fixed with viewport clamping, so no scrolling or
+   overflow-hidden ancestor (.controls, .map-pane, .legend's backdrop-filter)
+   can ever clip it. */
+
+#info-pop {
+  position: fixed;
+  left: 0;
+  top: 0;
   width: 264px;
+  max-width: calc(100vw - 24px);
   background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -601,13 +606,11 @@ button {
   opacity: 0;
   pointer-events: none;
   transform: translateY(3px) scale(0.98);
-  transform-origin: bottom right;
   transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
-  z-index: 30;
+  z-index: 100;
 }
 
-.info:hover::after,
-.info:focus-visible::after {
+#info-pop.show {
   opacity: 1;
   transform: translateY(0) scale(1);
 }

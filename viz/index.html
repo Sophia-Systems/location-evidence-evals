@@ -590,12 +590,17 @@ button {
   border-color: var(--accent);
 }
 
-.info::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: -10px;
+/* The popover itself is a single JS-positioned element appended to <body>
+   (see ui.js): position: fixed with viewport clamping, so no scrolling or
+   overflow-hidden ancestor (.controls, .map-pane, .legend's backdrop-filter)
+   can ever clip it. */
+
+#info-pop {
+  position: fixed;
+  left: 0;
+  top: 0;
   width: 264px;
+  max-width: calc(100vw - 24px);
   background: var(--card);
   color: var(--ink);
   border: 1px solid var(--line);
@@ -608,13 +613,11 @@ button {
   opacity: 0;
   pointer-events: none;
   transform: translateY(3px) scale(0.98);
-  transform-origin: bottom right;
   transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
-  z-index: 30;
+  z-index: 100;
 }
 
-.info:hover::after,
-.info:focus-visible::after {
+#info-pop.show {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
@@ -3022,6 +3025,62 @@ function buildApp(root) {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") setPlacing(false);
   });
+
+
+  const infoPop = document.createElement("div");
+  infoPop.id = "info-pop";
+  infoPop.setAttribute("role", "tooltip");
+  document.body.appendChild(infoPop);
+  let infoBtn = null; // the .info button the popover is showing for
+
+  function positionInfoPop(btn) {
+    const M = 8; // px viewport margin
+    const r = btn.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    const pw = infoPop.offsetWidth;
+    const ph = infoPop.offsetHeight;
+    let left = r.right + 10 - pw;
+    left = Math.max(M, Math.min(left, vw - pw - M));
+    let top = r.top - 8 - ph;
+    if (top < M) top = r.bottom + 8;
+    top = Math.max(M, Math.min(top, vh - ph - M));
+    infoPop.style.left = `${left}px`;
+    infoPop.style.top = `${top}px`;
+  }
+
+  function showInfoPop(btn) {
+    infoBtn = btn;
+    infoPop.textContent = btn.dataset.tip;
+    positionInfoPop(btn);
+    infoPop.classList.add("show");
+  }
+
+  function hideInfoPop() {
+    infoBtn = null;
+    infoPop.classList.remove("show");
+  }
+
+  document.addEventListener("pointerover", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) {
+      if (btn !== infoBtn) showInfoPop(btn);
+    } else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("focusin", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) showInfoPop(btn);
+    else if (infoBtn) hideInfoPop();
+  });
+  document.addEventListener("click", (e) => {
+    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
+    if (btn) {
+      if (infoBtn === btn && infoPop.classList.contains("show")) hideInfoPop();
+      else showInfoPop(btn);
+    }
+  });
+  document.addEventListener("scroll", () => hideInfoPop(), true);
+  window.addEventListener("resize", () => hideInfoPop());
 
 
   const tip = $("#map-tip");
