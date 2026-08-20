@@ -1,13 +1,13 @@
 # PROMPT.md -- build specification for the evidence-evaluation visualization
 
-You are building an interactive visualization of how signed RTT evidence updates belief about a machine's location. Read `README.md` in this repository first; this page implements that document, it does not improvise on it. Where this spec and README.md disagree, README.md wins -- flag the conflict rather than silently choosing.
+You are building an interactive visualization of how signed new locationn evidence updates belief about a machine's location. Read `README.md` and other docs in this repository first; this page implements concepts described in those documents, it does not improvise on it. Where this spec and README.md disagree, README.md wins -- flag the conflict rather than silently choosing. The goal is to build a visualization / demo that communicates these concepts clearly so we can talk with more sophistication about the challenge and potential solutions.
 
 ## Purpose and audience
 
 The page exists to make four results feel obvious to a technically literate but non-specialist viewer:
 
 1. A ping does not point at a location -- it erases everything outside a circle. Belief concentrates by exclusion.
-2. Anchor geometry is information: a second anchor at a different bearing collapses the region; a second anchor in the same city adds almost nothing.
+2. Anchor geometry is information: a second anchor at a different bearing collapses the region; a second anchor in the same city likely adds little spatial information.
 3. Trust caps confidence: evidence from a distrusted anchor cannot concentrate the posterior past the `1/pi` ceiling, no matter how many pings it sends.
 4. Over-subtracting the turnaround floor manufactures false proximity -- the one control that can make the system *wrong* rather than merely imprecise.
 
