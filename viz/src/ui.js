@@ -46,7 +46,7 @@ const INFO = {
   fabricate:
     "SIMULATION control, not a verifier input. A dishonest anchor never measures the attester: it signs an invented receipt consistent with the DECLARED location. Its fabricated story may violate the true-distance floor -- physics binds honest measurement, not invention. The verifier's only defense is this anchor's π.",
   floor:
-    "Color is on a log scale relative to the brightest cell. Beyond a lightspeed radius the likelihood falls off a cliff -- but lands on a tiny floor (10⁻⁶ of peak), not zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt, so the evaluation keeps that residual explicit.",
+    "Color is on a log scale relative to the brightest cell, and overall brightness tracks how much the evidence discriminates: a shallow or spread-out posterior renders as a dim haze, while deep, concentrated belief earns the ramp's full intensity. Beyond a lightspeed radius the likelihood falls off a cliff -- but lands on a tiny floor (10⁻⁶ of peak), not zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt, so the evaluation keeps that residual explicit.",
   posture:
     "The assumptions the current map is computed under -- the qualifiers Q that travel with any location credibility assessment. This evaluator always assumes a COMPLIANT attester (answers as fast as it can); the evasive presets deliberately violate that assumption so you can watch what it costs. Standing dependencies (hardware binding, signature soundness) are in “About this model”.",
   receipts:
@@ -118,7 +118,7 @@ export function buildApp(root) {
           <div class="legend">
             <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
             <div class="bar" id="legend-bar"></div>
-            <div class="ends"><span>ε floor (10⁻⁶×)</span><span>log scale</span><span>peak</span></div>
+            <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
           </div>
         </div>
         <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
@@ -237,6 +237,18 @@ export function buildApp(root) {
   let animating = false;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+  // Map the posterior to display values. Two jobs, deliberately separated:
+  // spatial STRUCTURE (where belief sits, on a log scale relative to the
+  // brightest cell) and overall CONFIDENCE (how much the evidence actually
+  // discriminates). A fixed 6-decade window alone painted every
+  // broad-but-not-flat field -- a trust-capped anchor's 1.5-decade ripple, a
+  // continent-spanning single-receipt interior -- as a full-bleed
+  // near-peak wash that read as confident signal. Now shallow fields have
+  // their structure stretched over a minimum window so it stays visible,
+  // and the whole field's intensity is scaled by confidence: vivid only when
+  // the field is both DEEP (real dynamic range, not a capped ripple) and
+  // CONCENTRATED (the bright end covers little of the domain). Haze reads
+  // as haze; signal reads as signal.
   function buildTargetT(post) {
     const n = post.length;
     const t = new Float32Array(n);
@@ -250,13 +262,29 @@ export function buildApp(root) {
       t.fill(0.35); // uniform belief: a calm wash, not a shout
       return t;
     }
+    // dynamic range in decades, capped at the model's 1e-6 relative floor.
+    // Note the trust mixture bounds a single anchor's range at log10(1/pi)
+    // (~1 decade at neutral trust): deep ranges only develop as multiple
+    // anchors' floors multiply, which is exactly when confidence is earned.
+    const decades = Math.log10(pmax / Math.max(pmin, pmax * 1e-6));
+    // structure window: stretch shallow fields (a single receipt's 1-decade
+    // drop, a trust-capped ripple) so their shape stays visible; the floor
+    // keeps near-flat noise from being amplified into fake structure
+    const W = Math.max(1.5, decades);
     const inv = 1 / pmax;
-    const k = 1 / (6 * Math.LN10); // 6-decade window, matching the 1e-6 floor
+    const k = 1 / (W * Math.LN10);
+    let bright = 0;
     for (let i = 0; i < n; i++) {
       const rel = post[i] * inv;
       const v = rel <= 1e-6 ? 0 : 1 + Math.log(rel) * k;
-      t[i] = v < 0 ? 0 : v;
+      const tv = v < 0 ? 0 : v;
+      t[i] = tv;
+      if (tv > 2 / 3) bright++;
     }
+    const rangeConf = Math.min(1, decades / 5);
+    const spanConf = (1 - bright / n) ** 2;
+    const amp = 0.35 + 0.65 * rangeConf * spanConf;
+    if (amp < 1) for (let i = 0; i < n; i++) t[i] *= amp;
     return t;
   }
 
