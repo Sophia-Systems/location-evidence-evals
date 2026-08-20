@@ -11,21 +11,20 @@ This document addresses one layer of that verification: given a stream of signed
 ## 2. Setting and vocabulary
 
 Three parties, following the terminology of the measurement program:
+<!--AI speak, no. Use full sentences ftlog-->
+- **Anchor.** A fixed host at known, declared coordinates that responds to probes and signs receipts. (The literature also refers to this role as "landmark" or "watchtower" nodes.)
+- **Attester.** The machine whose location is being measured. 
+- **Verifier.** The service that evaluates evidence and location-based policy conformance.
 
-- **Anchor.** A fixed host at known, declared coordinates that responds to probes and signs receipts. (The literature also says landmark or watchtower.)
-- **Attester.** The machine whose location is tested. (The framework document says prover; this program uses attester, never "attestor.")
-- **Verifier.** The service that appraises evidence and evaluates location. The verifier is never the pinging host; measurement is the anchors' job.
+The measurement objects: a **probe** is a measurement packet; the **challenge** is the nonce inside it; a **receipt** is the anchor's signed, timestamped response. The **declared location** is the coordinates asserted by the operator or a registry -- the thing under test. The **evaluated location** is the output of this layer: a posterior over locations with confidence. <!--this last one is misleading, it is more the "assessment" in the framework https://www.johnx.co/research/location-verification-framework. We should align to that but it should be clearer language imo. maybe location assessment, or spatial probability assessment? -->
 
-The measurement objects: a **probe** is a measurement packet; the **challenge** is the nonce inside it; a **receipt** is the anchor's signed, timestamped response. The **declared location** is the coordinates asserted by the operator or a registry -- the thing under test. The **evaluated location** is the output of this layer: a posterior over locations with confidence.
-
-More generally, the object under evaluation is a claimed **event** within a spacetime envelope: here, "this chip was present" within a spatial region and a temporal range. The framework is deliberately flexible about what event is claimed; the machinery below is written for presence of an attester key, which is what RTT evidence can speak to.
+More generally, the object under evaluation is an **event**, claimed to have occurred within a spacetime envelope: here, "this chip was present" within a spatial region and a temporal range. The framework is deliberately flexible about what event is claimed; the machinery below is written for presence of an attester key, which is what RTT evidence can speak to.<!--Just saying "The framework" is a bit presumptuous, we should introduce it humbly given that we wrote it ...-->
 
 A standing caveat that belongs in every artifact built on this document: RTT locates the **keyholder**, not the GPU. Until a hardware binding layer exists, all of this is evidence about where the attester's signing key answers from.
-
+<!--This should be stated as an assumption or depenency, not "until a hardware binding layer exists". We also maybe should mention quantum ? i.e. depending on the digital signature algorithm used ...-->
 ### Where this layer sits
-
+<!--I'm kind of allergic to you using the word "layer" ... it is very rarely clear to me what that actually means. -->
 **Evidence evaluation** (this document). Input: receipts, anchor metadata, a prior. Output: `(posterior probability map, Q)` -- a posterior distribution over locations for a stated temporal range, plus qualifiers recording assumptions and limitations. This layer deliberately ignores policy questions involving geofences, borders, or time-series analysis.
-
 **Geospatial policy evaluation** (downstream, out of scope). Consumes `(posterior probability map, Q)` and applies a policy: geofencing (containment in a policy zone), change detection (deviation in a time series), co-location likelihood (crossover-distance quantification). For geofencing, the core operation is nearly trivial -- `P(inside geofence)` is the sum of posterior mass in the cells inside the polygon -- and turning that number plus Q into a yes/no requires a threshold that encodes tolerance for false accusations versus missed evasions. That threshold is a policy judgment, which is why it does not belong in the evidence layer. This split follows [Cankaya's](https://www.lesswrong.com/posts/fgvmKqRGvBteKeDoc/a-system-overview-for-near-term-low-trust-ai-compute) principle of separating evidence capture and commitment from evaluation.
 
 ### Two attester postures
@@ -33,10 +32,12 @@ A standing caveat that belongs in every artifact built on this document: RTT loc
 The likelihood model must declare which world it is computed in:
 
 - A **compliant attester** answers probes as fast as its hardware and software allow. It does not manipulate its own delay.
-- An **evasive attester** plays games with its own delay -- inserting artificial latency, optimizing its response path beyond calibrated expectations, or answering selectively -- to move the evaluated location away from the truth.
-
+- An **evasive attester** plays games with its own delay -- inserting artificial latency, optimizing its response path beyond calibrated expectations, or answering selectively -- to move the evaluated location away from the areas that appear likelier.
+<!--"plays games" no, i want to be serious-->
 Nothing an evasive attester does can make it appear *closer* to an honest anchor than it is (section 4). Everything else about the likelihood -- the informativeness of large delays, the safety of floor subtraction -- depends on which posture is assumed, and the assumption is recorded in Q.
-
+<!--this last paragraph lost me-->
+---
+TODO:
 ## 3. The measurement primitive
 
 In the [RTT protocol under investigation](https://github.com/location-proofs/plugin-rtt-anchor), one measurement is a four-packet exchange. The anchor times the interval from its own transmission of a challenge to its own receipt of the signed challenge nonce -- one clock, one machine, no synchronization. The anchor then signs the interval it measured, so the verifier receives the number exactly as the anchor produced it; the attester relays the receipt but cannot alter it. This design resists a dishonest attester by construction -- the attester never reports a measurement, only the anchor does -- and it concentrates the trust question on the anchor, which section 7 takes up.
