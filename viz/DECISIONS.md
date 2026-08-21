@@ -313,3 +313,80 @@ following those.
     preset caption in engine.js is kept to one crisp sentence plus a short
     parenthetical trust note (the evasive caption was tightened), so the
     longest runs ~3 lines at the card's width.
+
+## v2: global Mercator display, tile basemap, windowed posterior
+
+35. **Network calls allowed; tile basemap adopted.** *(Adjudicated by
+    John.)* Supersedes PROMPT.md's zero-network clause (PROMPT.md itself is
+    untouched -- it is the author's file). The display is a hand-rolled
+    Web Mercator slippy map: Carto Positron `light_all` @2x tiles
+    (`dark_all` under `prefers-color-scheme: dark`), subdomain rotation
+    a-d, 400-entry LRU cache, blank-on-404, attribution "© OpenStreetMap
+    contributors © CARTO" along the bottom edge while tiles are in use. No
+    map library -- the no-dependency single-file build stands. build.mjs's
+    verification changed from "zero http(s) URLs" to a whitelist of
+    exactly the Carto tile host; imports/fetch/XHR/link/src remain
+    forbidden, so the page's entire network surface is tile GETs.
+36. **Offline fallback: small global vector layer + city labels.**
+    *(Adjudicated by John: small matters more than detail -- tiles carry
+    detail when online.)* map-data.js regenerated as GLOBAL Natural Earth
+    50m coastline + admin-0 boundary lines, Douglas-Peucker 0.05 deg,
+    quantized 0.01 deg, antimeridian-split, 97.8 KB against the <=350 KB
+    budget. Coordinates are stored as lon/lat degrees (projection-agnostic;
+    the renderer converts to Mercator world units once at startup --
+    documented in the generated header). The vector layer ALWAYS draws
+    beneath the tiles, so the map is never blank while tiles load; when
+    the first tile failure arrives with zero successes the page flips to
+    fallback-only (a single later success clears the flag for good). A
+    ~45-entry MAJOR_CITIES set renders as subtle dot+label ONLY in
+    offline mode (tiles carry their own labels; never double-label), with
+    greedy label decluttering. Judgment calls: city labels and the window
+    boundary draw ABOVE the heat wash for legibility (the "beneath
+    everything" rule is applied to the geography linework); the
+    attribution line hides in offline mode since the fallback geography
+    is public-domain Natural Earth, not OSM/CARTO.
+37. **Windowed posterior -- "region under evaluation."** *(Adjudicated by
+    John.)* The hypothesis space stays the finite ~2,600 km square window
+    (the engine grid), now decoupled from the display. geo.js is
+    parameterized by window center (projectAt/unprojectAt; the
+    CENTER-bound wrappers keep the v1 contract, so the default center
+    54N 13E leaves every legacy test's geometry unchanged). Presets
+    recenter the window on their declared location; a small "evaluate
+    here" control recenters it on the current view center. Moving the
+    window RETAINS every receipt -- evidence is evidence; the hypothesis
+    space moved -- and recomputes cell lat/lons plus per-anchor distance
+    fields (all haversine, so anchors may sit anywhere on Earth). The
+    cell-indexed prior resets to uniform on a move (it has no meaning
+    over a different region); the display snaps rather than tweening
+    across hypothesis spaces. Tests cover recentering round-trips
+    (posterior reproduced exactly from retained receipts) and the
+    far-away anchor (Tokyo probing a Cambridge attester: ~14,000 km
+    circle, window wholly interior, tilt bounded by 1/pi -- result 2 at
+    global scale).
+38. **Heat rendering: pixel->cell map instead of per-update quad
+    rasterization.** The brief suggested projecting ~26k cell quads per
+    posterior update; implemented instead as a precomputed Int32Array
+    mapping each offscreen pixel (640 px wide, covering the window's
+    Mercator bbox; -1 outside the window) to its grid cell -- rebuilt
+    only on grid or window change, exactly the pattern the v1 hex path
+    already used. Rationale: the posterior tween calls updateHeat every
+    animation frame for ~350 ms, and a straight per-pixel LUT write
+    (~300k pixels) beats 26k Path2D fills per frame by an order of
+    magnitude while producing the identical image (each pixel gets its
+    cell's color; cell boundaries are exact at the raster's resolution).
+    Square grids index directly; hex grids go through coarse buckets.
+39. **Single world copy; no horizontal wrap except geodesic circles.**
+    The effective minimum zoom rises with viewport size
+    (max(2, log2(viewport/256))) so one Mercator world always covers the
+    screen, and the view clamps inside it -- tiles, vector paths, heat,
+    and markers never need wraparound copies. Cost: the date-line seam
+    cannot be panned across (the Pacific view splits there), acceptable
+    for a viz whose subjects live on continents. Exclusion circles are
+    the one genuinely wrapping geometry: their ~181 sampled bearings are
+    longitude-unwrapped into a continuous path which is re-stroked a
+    world-width left/right when it overflows, so a Tokyo-sized circle
+    crosses the antimeridian without streaks (browser-verified).
+40. **Scale bar is latitude-local.** Mercator meters-per-pixel varies
+    with latitude, so the bar re-derives from the view-center latitude
+    and states it ("500 km at 53°N") -- exact at center, approximate
+    toward the top and bottom of the viewport.
