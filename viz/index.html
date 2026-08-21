@@ -4676,7 +4676,7 @@ const INFO = {
   bundle:
     "How one anchor's receipts combine. rtt-min (default): receipts from one anchor share a path, so their distance information is nearly exhausted by the smallest of them -- redundancy discounting. product: multiply per-receipt likelihoods instead.",
   grid:
-    "The display lattice for the posterior. Square or equal-area hex, at the chosen resolution. Layout only -- every distance that feeds the model is a great-circle distance, whatever the cells look like.",
+    "The lattice for the posterior over the region under evaluation (the dashed window). Square or equal-area hex, at the chosen resolution. Layout only -- every distance that feeds the model is a great-circle distance, whatever the cells look like. Move the window with “evaluate here”.",
   interval:
     "One assessment covers one stated time interval; only receipts stamped inside it contribute. Combining them assumes the machine did not move during the interval (stationarity) -- the interval and that assumption travel with the result in Q.",
   attack:
@@ -4829,7 +4829,7 @@ function buildApp(root) {
           <details class="fold" id="about-fold">
             <summary>about this model</summary>
             <div class="fold-body">
-              <p><b>A flat window on a round problem.</b> v1 renders a flat 2D European window (~2,600 × 2,600 km, azimuthal equidistant) of what is truly a 3D, whole-Earth domain. Distances feeding the model are great-circle; the flatness is display-only, and a global version would change the picture, not the math.</p>
+              <p><b>A windowed posterior on a round Earth.</b> The map is global, but the model's hypothesis space is the ~2,600 × 2,600 km "region under evaluation" -- the dashed window holding the posterior grid. Anchors can sit anywhere on Earth and every distance is great-circle; "evaluate here" moves the window (keeping all receipts) rather than growing it, because a whole-Earth grid at useful resolution would be millions of cells for no extra insight: the claim under test is always local.</p>
               <p><b>Two standing dependencies.</b> Everything here locates <i>the machine answering with the attester's signing key</i>. Binding that key to particular hardware is a separate, unsolved problem. And receipts are only as good as their signatures: an adversary who can forge the scheme voids every bound on this page.</p>
               <p><b>Why the floor is not zero.</b> Beyond a lightspeed radius the likelihood drops off a cliff but lands on a small residual (10⁻⁶ of peak) rather than zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt. The evaluation keeps that residual explicit instead of rounding it away.</p>
               <p><b>Geography is context, not claim.</b> Country boundaries are drawn to orient you; nothing in the computation reads them. Geofences and P(inside region) belong to the policy stage, deliberately not built here.</p>
@@ -4860,7 +4860,8 @@ function buildApp(root) {
       <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
 
       <div class="hud">
-        <button class="btn small view-btn" id="reset-view-btn" type="button" title="reset pan and zoom">⤢ reset view</button>
+        <button class="btn small view-btn" id="evaluate-here-btn" type="button" title="recenter the region under evaluation on the current view — receipts are kept; the hypothesis space moves">⌖ evaluate here</button>
+        <button class="btn small view-btn" id="reset-view-btn" type="button" title="frame the region under evaluation">⤢ reset view</button>
         <div class="legend">
           <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
           <div class="bar" id="legend-bar"></div>
@@ -5663,6 +5664,15 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   $("#reset-view-btn").addEventListener("click", () => {
     renderer.resetView();
     drawScene();
+  });
+
+  $("#evaluate-here-btn").addEventListener("click", () => {
+    const c = renderer.getViewCenterLatLon();
+    engine.setWindowCenter(c.lat, c.lon);
+    renderer.setWindow(engine.getWindowCenter());
+    for (const id of state.minDist.keys()) computeMinDist(id);
+    displayT = null; // new region: snap, never tween across hypothesis spaces
+    refresh({ animate: false });
   });
 
   {
