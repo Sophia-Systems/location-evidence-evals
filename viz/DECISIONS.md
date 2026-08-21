@@ -204,9 +204,9 @@ following those.
 28. **Heat overlay opacity slider + magma default ramp.** *(Adjudicated by
     John.)* PROMPT.md specifies viridis as the default color ramp and does
     not mention an opacity control. John, reviewing the live page: add an
-    overlay-opacity slider (10-100%, default 100% -- the prior fixed
-    behavior) directly under the ramp selector, and make magma the default
-    ramp instead of viridis. Ramp and opacity are display preferences (like
+    overlay-opacity slider (10-100%) directly under the ramp selector, and
+    make magma the default ramp instead of viridis. (The default was 100%
+    -- the prior fixed behavior -- lowered to 75% in the item-33 retune.) Ramp and opacity are display preferences (like
     grid shape/resolution) that persist across presets rather than resetting
     on `loadPreset`. Implemented as a single `ctx.globalAlpha` around the
     heat-canvas `drawImage` in render.js -- the per-cell alpha the field
@@ -253,8 +253,9 @@ following those.
     this groundwork is shared with item 31 (pan/zoom), which reuses the same
     two functions for its view transform.
 31. **Pan and zoom.** *(Adjudicated by John.)* Wheel-zoom centered on the
-    cursor and drag-to-pan on empty map background, 1x (full-domain fit) to
-    8x, on the existing azimuthal-equidistant plane -- a pure 2D affine view
+    cursor and drag-to-pan on empty map background, 1x (originally
+    full-domain contain-fit; cover-fit since item 32) to 8x, on the
+    existing azimuthal-equidistant plane -- a pure 2D affine view
     transform (`viewScale`/`viewCenter` in render.js), no reprojection.
     Everything reads it through `kmToCss`/`cssToKm`: heat layer, coastlines/
     borders, exclusion circles, anchors, declared star, truth crosshair,
@@ -266,10 +267,49 @@ following those.
     applies each pointer delta immediately (cheap arithmetic) but throttles
     the actual `drawScene()` to one per animation frame; wheel and pan never
     call `engine.computePosterior()`, only the view-transformed redraw --
-    the posterior stays fixed while navigating. `viewCenter` is loosely
-    clamped (±1.3x the domain half-extent) so panning can't lose the map
-    entirely, while still reaching well past the data into the water-filled
-    margin. Browser-verified: wheel-zoom into Denmark shows visibly finer
+    the posterior stays fixed while navigating. `viewCenter` was initially
+    clamped loosely (±1.3x the domain half-extent); item 32's cover-fit
+    pass replaced that with a tight visible-window-inside-domain clamp.
+    Browser-verified: wheel-zoom into Denmark shows visibly finer
     10m coastline detail than the 1x overview; pan, anchor-drag-at-zoom, and
     probe-at-zoom all keep the heat layer/circles/anchors aligned; reset-view
     returns to the exact 1x/centered state.
+
+## Phase 4 polish (orchestrator-confirmed visual defects)
+
+32. **Cover-fit replaces contain-fit at 1x.** The item-30/31 layout still
+    letterboxed the square ±1,300 km domain inside a wide viewport: the 1x
+    baseline scaled the domain to the SHORTER canvas dimension, leaving
+    dead background bands flanking it and the uniform-prior wash ending at
+    an abrupt straight edge mid-screen -- not actually full-bleed. Now the
+    1x baseline is COVER-fit (domain scaled to the longer dimension, its
+    top/bottom or sides cropped as the aspect requires), initial view and
+    reset-view use it, and the pan clamp is exact: the visible window stays
+    inside the domain square at every zoom, so no outside-the-domain space
+    is ever on screen and visible area ⊆ posterior grid always holds.
+    `resize()` re-clamps because the cover scale changes with the viewport.
+    Consequence accepted: at 1x on a 16:10 viewport the domain's far north
+    (e.g. the Helsinki anchor) starts off-screen -- panning reaches it, and
+    its receipts still update the map. The base-map vector clip's ±1,350 km
+    overscan margin is now unreachable (harmless; left as data slack).
+    Also: the canvas-drawn km scale bar was fully occluded by the floating
+    assumptions readout (both bottom-left); the bar now draws just above it.
+33. **Zero-structure posteriors render as a whisper, not a slab.** At magma
+    + 100% opacity the uniform prior painted an opaque purple sheet over
+    the basemap, contradicting the buildTargetT intent (dim haze until the
+    evidence discriminates). Retuned as three coordinated display changes:
+    uniform-belief display value 0.35 -> 0.22, heat alpha curve
+    0.06 + 0.82·t^1.3 -> 0.045 + 0.875·t^1.8 (quieter through the low-mid
+    range, still steep toward t = 1), and default overlay opacity
+    100% -> 75%. Screenshot-verified progression in both themes: uniform
+    prior = barely-there tint with the basemap clearly through it; one
+    probe = bounded glow with readable coastlines; four-anchor lens =
+    vivid peak. Coast/border stroke contrast over the (now lighter) wash
+    was judged legible in both themes with the existing theme neutrals --
+    no stroke-color change needed.
+34. **Scenario captions wrap fully; length governed at the source.** The
+    two-line clamp ellipsized the trust-note parentheticals mid-sentence
+    ("(Anchors here are hig…"). The clamp and ellipsis are gone; each
+    preset caption in engine.js is kept to one crisp sentence plus a short
+    parenthetical trust note (the evasive caption was tightened), so the
+    longest runs ~3 lines at the card's width.
