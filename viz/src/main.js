@@ -13,9 +13,21 @@ function wantsStory() {
   return window.matchMedia("(max-width: 760px)").matches;
 }
 
+// The story sits next to this page, but "next to" depends on how this page
+// was addressed: opened as .../index.html (files, dev shells), a relative
+// "./story.html" resolves beside it -- while behind a clean-URL rewrite
+// (johnx.co serves this page at /demos/location-evidence-evals with no
+// trailing slash), the same relative link would resolve into the PARENT
+// directory and 404. An extensionless path therefore appends /story.html
+// to the page's own path segment instead.
+function storyUrl() {
+  const p = location.pathname;
+  return p.endsWith(".html") ? "./story.html" : `${p.replace(/\/+$/, "")}/story.html`;
+}
+
 function boot() {
   if (wantsStory()) {
-    location.replace("./story.html");
+    location.replace(storyUrl());
     return;
   }
   buildApp(document.getElementById("root"));
