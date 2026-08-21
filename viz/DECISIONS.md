@@ -347,11 +347,13 @@ following those.
     is public-domain Natural Earth, not OSM/CARTO.
 37. **Windowed posterior -- "region under evaluation."** *(Adjudicated by
     John.)* The hypothesis space stays the finite ~2,600 km square window
-    (the engine grid), now decoupled from the display. geo.js is
+    (the engine grid; widened to ~3,600 km by item 42), now decoupled from
+    the display. geo.js is
     parameterized by window center (projectAt/unprojectAt; the
     CENTER-bound wrappers keep the v1 contract, so the default center
     54N 13E leaves every legacy test's geometry unchanged). Presets
-    recenter the window on their declared location; a small "evaluate
+    recenter the window on their declared location (the Cambridge presets
+    pin CENTER instead since item 42); a small "evaluate
     here" control recenters it on the current view center. Moving the
     window RETAINS every receipt -- evidence is evidence; the hypothesis
     space moved -- and recomputes cell lat/lons plus per-anchor distance
@@ -414,3 +416,46 @@ following those.
     here" now re-frames as well, so the new window position gets the same
     default framing; the latitude-local scale bar (item 40) needs no
     change since it re-derives per draw.
+42. **Wider window; default view frames the preset's staging, clamped
+    inside the window.** *(Adjudicated by John; centering geometry
+    corrected during the build.)* Supersedes item 41's fit rule and
+    amends the window size stated in items 35-41. The author's conflict:
+    item 41's inset cover fit hid the evaluation-window edge, but in the
+    Cambridge presets it also pushed Hetzner Helsinki off-screen -- the
+    staging spans ~1,760 km, so "window edge off-screen" implied "far
+    anchors off-screen". Both matter: every staged anchor visible at
+    load AND no heat edge visible.
+
+    The adjudicated remedy: HALF_EXTENT 1,300 -> 1,800 km (~3,600 km
+    window), default grid 160 -> 180 so the cell pitch stays 20 km
+    (full recompute measured 9.1 ms median at 180x180, 8 anchors, 400
+    receipts -- budget 50 ms), and a new default view: frame ALL of the
+    preset's anchors plus the declared marker with a ~15% margin,
+    clamped so the viewport still sits strictly inside the window.
+
+    Build-measured correction: the adjudication predicted the clamp
+    would never bite, but for a window centered on the DECLARED location
+    that is geometrically false at any window size the build could
+    justify -- Cambridge sits at the corner of its own staging, so the
+    window's usable interior beyond Helsinki was ~330 km and the sampled
+    boundary-cover fit exceeded the zero-margin anchor frame at wide
+    viewport aspects (infeasible for any view center up to a ~5,600 km
+    window). Two amendments deliver the adjudication's intent within its
+    numbers: (a) the four Cambridge presets pin `windowCenter: CENTER`
+    (54N 13E -- the v1 domain center, which is the staging's midpoint;
+    the preset schema already carried the pin for exactly this), so the
+    window regains symmetric slack around the staging; (b) the fit rule
+    is s = min(max(frame@15%, cover x 1.05), frame@0%) -- frame the
+    staging at 15% margin, zoom in just enough to hide the boundary when
+    it would intrude (the margin compresses adaptively, e.g. to ~13.8%
+    at 1600x1000; anchors themselves never leave the screen while the
+    cover fit stays below the zero-margin frame, test-asserted per
+    preset), with the clamp inset softened from item 41's 1.15 to 1.05
+    since it now competes with anchor visibility. "Evaluate here" and
+    other non-preset framings keep the item-41 cover fit at 1.15 (no
+    natural anchor frame); reset-view re-frames the current staging,
+    anchor drags included. The evasive preset's tight Tallinn staging is
+    frame-bound (~z7.4 over the Gulf of Finland), asserted in tests. The
+    fit math is a pure exported function (computeViewFit) so the node
+    suite verifies all five presets at 1600x1000: staging framed with
+    >=10% margin, boundary entirely off-screen.
