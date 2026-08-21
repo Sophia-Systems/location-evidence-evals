@@ -366,6 +366,23 @@ body {
   z-index: 5;
 }
 
+/* tile attribution: bottom edge, beneath the HUD stack */
+
+.map-attribution {
+  position: absolute;
+  right: 16px;
+  bottom: 1px;
+  font: 500 9px var(--font-mono);
+  color: var(--ink-faint);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.map-attribution.hidden {
+  display: none;
+}
+
 /* map tooltip */
 
 #map-tip {

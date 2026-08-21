@@ -97,3 +97,34 @@ export function project(lat, lon) {
 export function unproject(x, y) {
   return unprojectAt(CENTER, x, y);
 }
+
+// ---------------------------------------------------------------------------
+// Web Mercator world coordinates (the v2 DISPLAY plane; never physics).
+// The world is a WORLD x WORLD square: x 0..WORLD spans lon -180..180,
+// y 0..WORLD spans lat +85.051..-85.051 (north at y = 0). At display zoom z
+// one world unit is 2^z css px -- the slippy-tile convention with 256 px
+// tiles, so tile (tx, ty) at tile-zoom tz covers world x in
+// [tx, tx+1] * WORLD / 2^tz.
+// ---------------------------------------------------------------------------
+
+export const WORLD = 256;
+export const MAX_MERC_LAT = 85.05113; // Mercator singularity clamp
+
+export function lonToWorldX(lon) {
+  return ((lon + 180) / 360) * WORLD;
+}
+
+export function latToWorldY(lat) {
+  const clamped = Math.max(-MAX_MERC_LAT, Math.min(MAX_MERC_LAT, lat));
+  const s = Math.sin(clamped * RAD);
+  return (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * WORLD;
+}
+
+export function worldXToLon(x) {
+  return (x / WORLD) * 360 - 180;
+}
+
+export function worldYToLat(y) {
+  const n = Math.PI - (2 * Math.PI * y) / WORLD;
+  return DEG * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}

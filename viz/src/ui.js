@@ -233,14 +233,18 @@ export function buildApp(root) {
       </div>
 
       <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
+      <div class="map-attribution" id="map-attribution">© OpenStreetMap contributors © CARTO</div>
       <div id="map-tip"></div>
     </div>
   </div>`;
 
   const $ = (sel) => root.querySelector(sel);
   const canvas = $("#map");
+  const attributionEl = $("#map-attribution");
   const renderer = createRenderer(canvas);
   renderer.setGrid(engine.getGrid());
+  // async tile arrivals repaint the scene (coalesced to one per frame)
+  renderer.setRedrawCallback(() => drawScene());
 
   // ---- display transform & animation --------------------------------------
 
@@ -380,6 +384,10 @@ export function buildApp(root) {
 
   function drawScene() {
     renderer.draw(sceneData());
+    // tile attribution applies only while the tile basemap is in use; in
+    // offline-fallback mode the geography is inlined Natural Earth (public
+    // domain), so the credit line hides
+    attributionEl.classList.toggle("hidden", renderer.isOffline());
   }
 
   function refresh({ animate = true } = {}) {
@@ -1126,6 +1134,12 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     state.minDist.clear();
     for (const a of engine.getAnchors()) computeMinDist(a.id);
     setPlacing(false);
+
+    // the evaluation window recentered on the preset's declared location:
+    // sync the renderer's window (boundary + heat raster) and re-frame the
+    // view on the new region under evaluation
+    renderer.setWindow(engine.getWindowCenter());
+    renderer.frameWindow();
 
     // interval back to the preset default (PROMPT.md's example window)
     $("#int-start").value = "12:00";

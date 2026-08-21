@@ -4,8 +4,11 @@
 // Plain Node, no dependencies. Concatenates the ES modules in dependency
 // order with import/export lines stripped into one IIFE, inlines the CSS,
 // and verifies the result: the extracted script must parse (node --check)
-// and the emitted file must make zero network requests (no http(s) URLs, no
-// import statements, no fetch calls).
+// and the emitted file's only permitted network dependency is the Carto
+// basemap tile host (v2 adjudication: tiles allowed, superseding the
+// original zero-network clause; the inlined vector geography keeps the page
+// fully functional offline). No other http(s) URLs, no import statements,
+// no fetch calls.
 //
 // Run: node viz/build.mjs
 
@@ -89,9 +92,16 @@ try {
   rmSync(tmp, { recursive: true, force: true });
 }
 
-// 2. Zero network requests: no URLs, no imports, no fetch.
+// 2. Network surface: every http(s) URL must point at the whitelisted Carto
+// tile host; nothing else may phone home (no imports, fetch, XHR, link/src).
+const TILE_HOST = "basemaps.cartocdn.com";
+for (const m of html.matchAll(/https?:\/\/[^\s"'`\\]+/g)) {
+  if (!m[0].includes(TILE_HOST)) {
+    console.error(`FAIL: emitted html contains non-whitelisted URL: ${m[0]}`);
+    process.exit(1);
+  }
+}
 for (const [pattern, why] of [
-  [/https?:\/\//, "http(s) URL"],
   [/^\s*import\s/m, "import statement"],
   [/\bfetch\s*\(/, "fetch call"],
   [/XMLHttpRequest/, "XHR"],
@@ -109,4 +119,6 @@ writeFileSync(out, html);
 console.log(
   `wrote ${out}: ${(html.length / 1024).toFixed(1)} KB (script ${(script.length / 1024).toFixed(1)} KB, css ${(css.length / 1024).toFixed(1)} KB)`
 );
-console.log("checks: script parses (node --check); no http(s)/import/fetch/XHR/link/src refs");
+console.log(
+  "checks: script parses (node --check); network surface limited to the Carto tile host; no import/fetch/XHR/link/src refs"
+);
