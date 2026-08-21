@@ -16,7 +16,7 @@
 //
 // Units: km, ms, km/ms throughout.
 
-import { HALF_EXTENT, haversineKm, unproject, project } from "./geo.js";
+import { HALF_EXTENT, CENTER, haversineKm, unprojectAt, projectAt } from "./geo.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -186,9 +186,27 @@ export function createEngine(options = {}) {
 
   let rng = mulberry32(seed);
 
-  // ---- grid ---------------------------------------------------------------
+  // ---- grid & evaluation window -------------------------------------------
+
+  // The hypothesis space is a finite ~2,600 km square window (the grid),
+  // centered on a movable window center -- the "region under evaluation".
+  // Default stays CENTER (54N 13E), the v1 domain. Moving the window keeps
+  // every receipt (evidence is evidence; the hypothesis space moved) and
+  // recomputes cell lat/lons + per-anchor distance fields.
+  let windowCenter = { ...CENTER };
 
   let grid = null; // {shape, n, cellCount, xs, ys, lats, lons, stepKm, cellAreaKm2}
+
+  // Fill (or refill) a grid's per-cell lat/lon from its window-plane xs/ys
+  // under the current window center.
+  function fillGridLatLon(g) {
+    const { xs, ys, cellCount } = g;
+    for (let i = 0; i < cellCount; i++) {
+      const ll = unprojectAt(windowCenter, xs[i], ys[i]);
+      g.lats[i] = ll.lat;
+      g.lons[i] = ll.lon;
+    }
+  }
 
   function buildGrid(shape, n) {
     const step = (2 * HALF_EXTENT) / n; // km, square cell pitch
@@ -229,11 +247,6 @@ export function createEngine(options = {}) {
     const count = xs.length;
     const lats = new Float32Array(count);
     const lons = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const ll = unproject(xs[i], ys[i]);
-      lats[i] = ll.lat;
-      lons[i] = ll.lon;
-    }
     // Circumradius of one cell (half-diagonal of the square; circumradius of
     // the Voronoi hexagon, nearest-neighbor pitch / sqrt(3)). Likelihood
     // fields evaluate each cell at the nearest point of its extent, so an
@@ -241,7 +254,7 @@ export function createEngine(options = {}) {
     // accumulateReceiptField.
     const cellRadKm =
       shape === "square" ? (step * Math.SQRT2) / 2 : (step * Math.sqrt(2 / Math.sqrt(3))) / Math.sqrt(3);
-    return {
+    const g = {
       shape,
       n,
       cellCount: count,
@@ -253,6 +266,24 @@ export function createEngine(options = {}) {
       cellAreaKm2: step * step,
       cellRadKm,
     };
+    fillGridLatLon(g);
+    return g;
+  }
+
+  // Move the evaluation window: same grid layout, new center. Receipts are
+  // RETAINED -- the evidence did not change, the hypothesis space did -- so
+  // every anchor's honest field is rebuilt against the new cell positions.
+  // The prior resets to uniform (a cell-indexed prior has no meaning over a
+  // different region; documented).
+  function setWindowCenter(lat, lon) {
+    windowCenter = { lat, lon };
+    fillGridLatLon(grid);
+    logPrior = null;
+    for (const a of anchors.values()) {
+      computeDistField(a);
+      a.sDirty = true;
+      a.mixDirty = true;
+    }
   }
 
   // ---- anchors ------------------------------------------------------------
@@ -767,6 +798,11 @@ export function createEngine(options = {}) {
     if (!preset) throw new Error(`unknown preset: ${presetOrId}`);
     anchors.clear();
     sim.dishonestAnchors.clear();
+    // The evaluation window recenters on the preset's declared location (its
+    // hypothesis space is "around the claim under test"); a preset may pin a
+    // different center explicitly via windowCenter.
+    const wc = preset.windowCenter ?? preset.declared;
+    setWindowCenter(wc.lat, wc.lon);
     defaultAnchorPi = HIGH_TRUST_PRESET_IDS.has(preset.id) ? HIGH_TRUST_PI : PI_PRESETS.neutral;
     for (const spec of preset.anchors) {
       addAnchor({ facility: spec.facility, pi: spec.pi });
@@ -797,7 +833,7 @@ export function createEngine(options = {}) {
   // ---- helpers for callers (rendering, tests) -----------------------------
 
   function nearestCellIndex(lat, lon) {
-    const { x, y } = project(lat, lon);
+    const { x, y } = projectAt(windowCenter, lat, lon);
     const { xs, ys, cellCount } = grid;
     let best = 0;
     let bestD = Infinity;
@@ -835,10 +871,12 @@ export function createEngine(options = {}) {
     // constants passthrough for convenience
     V_C,
     V_FIBER,
-    // grid
+    // grid & evaluation window
     getGrid,
     rebuildGrid,
     nearestCellIndex,
+    setWindowCenter,
+    getWindowCenter: () => ({ ...windowCenter }),
     // anchors
     addAnchor,
     removeAnchor,

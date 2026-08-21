@@ -2,18 +2,23 @@
 //
 // Every module (map data, engine, rendering) composes against this file.
 //
-// Display plane: azimuthal equidistant projection centered on CENTER.
+// Window plane (the model's hypothesis space): azimuthal equidistant
+// projection centered on a movable WINDOW CENTER (default CENTER, 54N 13E).
 //   x = km east of center, y = km north of center.
-//   Domain: x, y in [-HALF_EXTENT, +HALF_EXTENT] (~2,500 x 2,500 km,
-//   UK through western Russia).
+//   Domain: x, y in [-HALF_EXTENT, +HALF_EXTENT] (~2,600 x 2,600 km).
+// The window is where the posterior grid lives -- the "region under
+// evaluation" -- decoupled from the display, which since v2 is a global
+// Web Mercator map. projectAt/unprojectAt take the window center explicitly;
+// the CENTER-bound project/unproject wrappers keep the v1 contract (and the
+// map-data generation pipeline) working unchanged.
 //
 // Distances that feed the model (anchor-to-cell, anchor-to-truth) are ALWAYS
-// great-circle via haversineKm on the sphere -- the projection is for display
-// and grid layout only, never for physics.
+// great-circle via haversineKm on the sphere -- the projection is for grid
+// layout only, never for physics.
 
 export const R_EARTH = 6371; // km, mean Earth radius
 export const CENTER = { lat: 54, lon: 13 };
-export const HALF_EXTENT = 1300; // km (domain sized so AWS Dublin and St Petersburg both fit)
+export const HALF_EXTENT = 1300; // km (window sized so AWS Dublin and St Petersburg both fit)
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -28,11 +33,11 @@ export function haversineKm(a, b) {
   return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-// {lat, lon} degrees -> {x, y} km on the display plane.
-export function project(lat, lon) {
+// {lat, lon} degrees -> {x, y} km on the window plane centered on `center`.
+export function projectAt(center, lat, lon) {
   const phi = lat * RAD;
-  const lam = (lon - CENTER.lon) * RAD;
-  const phi0 = CENTER.lat * RAD;
+  const lam = (lon - center.lon) * RAD;
+  const phi0 = center.lat * RAD;
   const cosC =
     Math.sin(phi0) * Math.sin(phi) +
     Math.cos(phi0) * Math.cos(phi) * Math.cos(lam);
@@ -68,17 +73,27 @@ export function destination(lat, lon, bearingDeg, distKm) {
   return { lat: phi2 * DEG, lon: ((lam2 * DEG + 540) % 360) - 180 };
 }
 
-// {x, y} km -> {lat, lon} degrees. Inverse of project.
-export function unproject(x, y) {
+// {x, y} km -> {lat, lon} degrees. Inverse of projectAt.
+export function unprojectAt(center, x, y) {
   const rho = Math.hypot(x, y);
-  if (rho === 0) return { lat: CENTER.lat, lon: CENTER.lon };
+  if (rho === 0) return { lat: center.lat, lon: center.lon };
   const c = rho / R_EARTH;
-  const phi0 = CENTER.lat * RAD;
+  const phi0 = center.lat * RAD;
   const sinC = Math.sin(c);
   const cosC = Math.cos(c);
   const lat = Math.asin(cosC * Math.sin(phi0) + (y * sinC * Math.cos(phi0)) / rho);
   const lon =
-    CENTER.lon * RAD +
+    center.lon * RAD +
     Math.atan2(x * sinC, rho * Math.cos(phi0) * cosC - y * Math.sin(phi0) * sinC);
-  return { lat: lat * DEG, lon: lon * DEG };
+  return { lat: lat * DEG, lon: ((lon * DEG + 540) % 360) - 180 };
+}
+
+// v1-contract wrappers, bound to the default CENTER. The map-data generator
+// and any center-agnostic caller keep using these.
+export function project(lat, lon) {
+  return projectAt(CENTER, lat, lon);
+}
+
+export function unproject(x, y) {
+  return unprojectAt(CENTER, x, y);
 }

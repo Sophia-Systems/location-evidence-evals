@@ -1141,7 +1141,7 @@ details.fold .fold-body b {
 
 const R_EARTH = 6371; // km, mean Earth radius
 const CENTER = { lat: 54, lon: 13 };
-const HALF_EXTENT = 1300; // km (domain sized so AWS Dublin and St Petersburg both fit)
+const HALF_EXTENT = 1300; // km (window sized so AWS Dublin and St Petersburg both fit)
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;
@@ -1155,10 +1155,10 @@ function haversineKm(a, b) {
   return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
-function project(lat, lon) {
+function projectAt(center, lat, lon) {
   const phi = lat * RAD;
-  const lam = (lon - CENTER.lon) * RAD;
-  const phi0 = CENTER.lat * RAD;
+  const lam = (lon - center.lon) * RAD;
+  const phi0 = center.lat * RAD;
   const cosC =
     Math.sin(phi0) * Math.sin(phi) +
     Math.cos(phi0) * Math.cos(phi) * Math.cos(lam);
@@ -1191,18 +1191,26 @@ function destination(lat, lon, bearingDeg, distKm) {
   return { lat: phi2 * DEG, lon: ((lam2 * DEG + 540) % 360) - 180 };
 }
 
-function unproject(x, y) {
+function unprojectAt(center, x, y) {
   const rho = Math.hypot(x, y);
-  if (rho === 0) return { lat: CENTER.lat, lon: CENTER.lon };
+  if (rho === 0) return { lat: center.lat, lon: center.lon };
   const c = rho / R_EARTH;
-  const phi0 = CENTER.lat * RAD;
+  const phi0 = center.lat * RAD;
   const sinC = Math.sin(c);
   const cosC = Math.cos(c);
   const lat = Math.asin(cosC * Math.sin(phi0) + (y * sinC * Math.cos(phi0)) / rho);
   const lon =
-    CENTER.lon * RAD +
+    center.lon * RAD +
     Math.atan2(x * sinC, rho * Math.cos(phi0) * cosC - y * Math.sin(phi0) * sinC);
-  return { lat: lat * DEG, lon: lon * DEG };
+  return { lat: lat * DEG, lon: ((lon * DEG + 540) % 360) - 180 };
+}
+
+function project(lat, lon) {
+  return projectAt(CENTER, lat, lon);
+}
+
+function unproject(x, y) {
+  return unprojectAt(CENTER, x, y);
 }
 
 // ---- map-data.js ----
@@ -2457,7 +2465,18 @@ function createEngine(options = {}) {
   let rng = mulberry32(seed);
 
 
+  let windowCenter = { ...CENTER };
+
   let grid = null; // {shape, n, cellCount, xs, ys, lats, lons, stepKm, cellAreaKm2}
+
+  function fillGridLatLon(g) {
+    const { xs, ys, cellCount } = g;
+    for (let i = 0; i < cellCount; i++) {
+      const ll = unprojectAt(windowCenter, xs[i], ys[i]);
+      g.lats[i] = ll.lat;
+      g.lons[i] = ll.lon;
+    }
+  }
 
   function buildGrid(shape, n) {
     const step = (2 * HALF_EXTENT) / n; // km, square cell pitch
@@ -2496,14 +2515,9 @@ function createEngine(options = {}) {
     const count = xs.length;
     const lats = new Float32Array(count);
     const lons = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const ll = unproject(xs[i], ys[i]);
-      lats[i] = ll.lat;
-      lons[i] = ll.lon;
-    }
     const cellRadKm =
       shape === "square" ? (step * Math.SQRT2) / 2 : (step * Math.sqrt(2 / Math.sqrt(3))) / Math.sqrt(3);
-    return {
+    const g = {
       shape,
       n,
       cellCount: count,
@@ -2515,6 +2529,19 @@ function createEngine(options = {}) {
       cellAreaKm2: step * step,
       cellRadKm,
     };
+    fillGridLatLon(g);
+    return g;
+  }
+
+  function setWindowCenter(lat, lon) {
+    windowCenter = { lat, lon };
+    fillGridLatLon(grid);
+    logPrior = null;
+    for (const a of anchors.values()) {
+      computeDistField(a);
+      a.sDirty = true;
+      a.mixDirty = true;
+    }
   }
 
 
@@ -2912,6 +2939,8 @@ function createEngine(options = {}) {
     if (!preset) throw new Error(`unknown preset: ${presetOrId}`);
     anchors.clear();
     sim.dishonestAnchors.clear();
+    const wc = preset.windowCenter ?? preset.declared;
+    setWindowCenter(wc.lat, wc.lon);
     defaultAnchorPi = HIGH_TRUST_PRESET_IDS.has(preset.id) ? HIGH_TRUST_PI : PI_PRESETS.neutral;
     for (const spec of preset.anchors) {
       addAnchor({ facility: spec.facility, pi: spec.pi });
@@ -2935,7 +2964,7 @@ function createEngine(options = {}) {
 
 
   function nearestCellIndex(lat, lon) {
-    const { x, y } = project(lat, lon);
+    const { x, y } = projectAt(windowCenter, lat, lon);
     const { xs, ys, cellCount } = grid;
     let best = 0;
     let bestD = Infinity;
@@ -2974,6 +3003,8 @@ function createEngine(options = {}) {
     getGrid,
     rebuildGrid,
     nearestCellIndex,
+    setWindowCenter,
+    getWindowCenter: () => ({ ...windowCenter }),
     addAnchor,
     removeAnchor,
     moveAnchor,

@@ -726,6 +726,127 @@ section("hand-added anchor trust inheritance (user adjudication)");
 }
 
 // ---------------------------------------------------------------------------
+section("evaluation window: recentering keeps receipts, recomputes fields");
+// ---------------------------------------------------------------------------
+{
+  const TOKYO = { lat: 35.68, lon: 139.69 };
+  const eng = createEngine({ seed: 61 });
+
+  check(
+    "default window center is 54N 13E (v1 domain -- keeps every legacy test honest)",
+    eng.getWindowCenter().lat === 54 && eng.getWindowCenter().lon === 13
+  );
+
+  // Presets recenter the window on their declared location.
+  eng.loadPreset("baseline");
+  const wcB = eng.getWindowCenter();
+  check(
+    "loadPreset(baseline) centers the window on declared (Cambridge)",
+    Math.abs(wcB.lat - 52.205) < 1e-6 && Math.abs(wcB.lon - 0.119) < 1e-6,
+    `got ${wcB.lat}, ${wcB.lon}`
+  );
+  eng.loadPreset("evasive");
+  const wcE = eng.getWindowCenter();
+  check(
+    "loadPreset(evasive) centers the window on declared (Tallinn)",
+    Math.abs(wcE.lat - 59.437) < 1e-6 && Math.abs(wcE.lon - 24.754) < 1e-6,
+    `got ${wcE.lat}, ${wcE.lon}`
+  );
+
+  // Recenter far away and back: receipts survive, fields recompute.
+  eng.loadPreset("baseline");
+  for (let k = 0; k < 5; k++) eng.probeAll(1000 + k);
+  const before = eng.getReadouts();
+  const post0 = Float32Array.from(eng.computePosterior());
+  const g = eng.getGrid();
+  const latSample0 = g.lats[12345];
+
+  eng.setWindowCenter(TOKYO.lat, TOKYO.lon);
+  check("window move retains every receipt", eng.getReadouts().receiptsInInterval === before.receiptsInInterval, `got ${eng.getReadouts().receiptsInInterval} vs ${before.receiptsInInterval}`);
+  check("grid cell lat/lons move with the window", Math.abs(g.lats[12345] - latSample0) > 1, `lat ${fmt(g.lats[12345])} vs ${fmt(latSample0)}`);
+  const a0 = eng.getAnchors()[0];
+  const dist = eng.getAnchorDistField(a0.id);
+  const want = haversineKm({ lat: a0.lat, lon: a0.lon }, { lat: g.lats[777], lon: g.lons[777] });
+  check("distance fields recomputed against the moved window", Math.abs(dist[777] - want) < 0.5, `${fmt(dist[777])} vs ${fmt(want)}`);
+
+  const postT = eng.computePosterior();
+  let sum = 0;
+  let finite = true;
+  for (let i = 0; i < postT.length; i++) {
+    sum += postT[i];
+    if (!Number.isFinite(postT[i])) finite = false;
+  }
+  check("posterior over the Tokyo window is finite and normalized", finite && Math.abs(sum - 1) < 1e-4, `sum=${fmt(sum, 6)}`);
+  // Every European anchor's circle lies an ocean away: the Tokyo window is
+  // wholly outside every exclusion radius, so each anchor's field is flat
+  // (floor everywhere) and the mixed posterior collapses to near-uniform.
+  let pkT = 0;
+  let mnT = Infinity;
+  for (let i = 0; i < postT.length; i++) {
+    if (postT[i] > postT[pkT]) pkT = i;
+    if (postT[i] < mnT) mnT = postT[i];
+  }
+  check(
+    "a window with no in-reach evidence reads near-uniform",
+    postT[pkT] / mnT < 1.05,
+    `max/min = ${fmt(postT[pkT] / mnT, 4)}`
+  );
+
+  // Move back: same window layout, receipts still in force, posterior
+  // reproduces the pre-move belief exactly (nothing was lost in transit).
+  eng.setWindowCenter(52.205, 0.119);
+  const postBack = eng.computePosterior();
+  let maxDiff = 0;
+  for (let i = 0; i < post0.length; i++) maxDiff = Math.max(maxDiff, Math.abs(post0[i] - postBack[i]));
+  check("moving the window back reproduces the original posterior from retained receipts", maxDiff < 1e-6, `maxDiff=${maxDiff}`);
+}
+
+// ---------------------------------------------------------------------------
+section("far-away anchor: giant circle, window interior, capped tilt (result 2 at global scale)");
+// ---------------------------------------------------------------------------
+{
+  // A Tokyo anchor probing a Cambridge attester: the exclusion circle is
+  // continental-scale, the whole European window sits inside it, and the
+  // anchor's spatial contribution over the window is a gentle interior tilt
+  // bounded by the trust cap -- geometry is information, and an anchor with
+  // no nearby geometry has almost none to give.
+  const eng = createEngine({ seed: 67 });
+  eng.loadPreset("baseline"); // window on Cambridge; declared = true = Cambridge
+  for (const a of eng.getAnchors()) eng.removeAnchor(a.id);
+  const tokyo = eng.addAnchor({ id: "tokyo", name: "Tokyo", lat: 35.68, lon: 139.69, pi: 0.1 });
+  eng.probe("tokyo", 1000);
+
+  const ro = eng.getReadouts().perAnchor.find((x) => x.id === "tokyo");
+  const dist = eng.getAnchorDistField("tokyo");
+  let dMax = 0;
+  for (let i = 0; i < dist.length; i++) if (dist[i] > dMax) dMax = dist[i];
+  check(
+    `exclusion radius is continental (${fmt(ro.exclusionRadiusKm, 0)} km) and the window sits wholly inside it`,
+    ro.exclusionRadiusKm > 9000 && dMax < ro.exclusionRadiusKm,
+    `r=${fmt(ro.exclusionRadiusKm, 0)} km, farthest cell ${fmt(dMax, 0)} km`
+  );
+
+  const post = eng.computePosterior();
+  let pk = 0;
+  let mn = Infinity;
+  for (let i = 0; i < post.length; i++) {
+    if (post[i] > post[pk]) pk = i;
+    if (post[i] < mn) mn = post[i];
+  }
+  check(
+    "posterior tilt across the window stays within the 1/pi trust cap",
+    post[pk] / mn <= 1 / tokyo.pi + 0.01,
+    `max/min = ${fmt(post[pk] / mn, 2)} vs 1/pi = ${fmt(1 / tokyo.pi, 1)}`
+  );
+  const massPeak = eng.massNear(eng.getGrid().lats[pk], eng.getGrid().lons[pk], 300, post);
+  check(
+    "concentration is negligible: <15% of mass within 300 km of the peak",
+    massPeak < 0.15,
+    `mass=${fmt(massPeak, 4)} (uniform would be ~0.04)`
+  );
+}
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log(`failures:\n  - ${failures.join("\n  - ")}`);
