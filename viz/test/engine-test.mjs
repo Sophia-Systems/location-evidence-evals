@@ -637,7 +637,7 @@ let reportedRecomputeMs = null;
 section("presets");
 // ---------------------------------------------------------------------------
 {
-  check("five presets defined", PRESETS.length === 5, `got ${PRESETS.length}`);
+  check("two presets defined", PRESETS.length === 2, `got ${PRESETS.length}`);
   check(
     "every preset carries a caption, declared, true location, and attack mode",
     PRESETS.every((p) => p.caption && p.declared && p.trueLocation && ["none", "inflation", "deflation"].includes(p.attack))
@@ -679,19 +679,12 @@ section("presets");
     );
   }
 
-  // Trust staging (DECISIONS.md item 26): erasure-lesson presets stage every
-  // anchor highly trusted; the trust haze debuts in preset 3.
-  for (const id of ["baseline", "geometry", "allowance"]) {
-    eng.loadPreset(id);
-    check(
-      `preset ${id} stages all anchors at pi 0.02 (erasure lesson)`,
-      eng.getAnchors().every((a) => Math.abs(a.pi - 0.02) < 1e-9)
-    );
-  }
-  eng.loadPreset("trust");
+  // Trust staging (DECISIONS.md item 26): the erasure-lesson preset stages
+  // every anchor highly trusted.
+  eng.loadPreset("baseline");
   check(
-    "preset trust keeps neutral pi 0.10 starting points",
-    eng.getAnchors().every((a) => Math.abs(a.pi - 0.1) < 1e-9)
+    "preset baseline stages all anchors at pi 0.02 (erasure lesson)",
+    eng.getAnchors().every((a) => Math.abs(a.pi - 0.02) < 1e-9)
   );
 }
 
@@ -702,7 +695,7 @@ section("hand-added anchor trust inheritance (user adjudication)");
   const eng = createEngine({ seed: 59 });
   check("no preset loaded: default pi is neutral 0.10", eng.getDefaultAnchorPi() === 0.1);
 
-  for (const id of ["baseline", "geometry", "allowance"]) {
+  for (const id of ["baseline"]) {
     eng.loadPreset(id);
     check(`preset ${id}: default pi for new anchors is 0.02`, eng.getDefaultAnchorPi() === 0.02);
     const a = eng.addAnchor({ facility: "aws-frankfurt" });
@@ -711,7 +704,7 @@ section("hand-added anchor trust inheritance (user adjudication)");
     check(`preset ${id}: hand-added click anchor inherits pi 0.02`, Math.abs(c.pi - 0.02) < 1e-9, `got ${c.pi}`);
   }
 
-  for (const id of ["trust", "evasive"]) {
+  for (const id of ["evasive"]) {
     eng.loadPreset(id);
     check(`preset ${id}: default pi for new anchors is neutral 0.10`, eng.getDefaultAnchorPi() === 0.1);
     const have = new Set(eng.getAnchors().map((a) => a.id));

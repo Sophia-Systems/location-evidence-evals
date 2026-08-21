@@ -568,33 +568,27 @@ export function createRenderer(canvas) {
     }
   }
 
-  // The declared star is translucent-filled and outline-defined so the
-  // posterior field stays readable beneath it: in the fabrication demo the
-  // fooled posterior's peak sits within a few cells of the declared spot,
-  // and an opaque marker would hide exactly the evidence the demo exists to
-  // show.
-  function drawStar(px, py, r, color) {
+  // The declared marker is a translucent-filled circle, moderately larger
+  // than an anchor dot, ringed in ink so it reads as "the claim under test"
+  // rather than another anchor. Translucent so the posterior field stays
+  // readable beneath it -- the evasive demo's peak sits within a few cells of
+  // the declared spot, and an opaque marker would hide exactly the evidence
+  // the demo exists to show. When declared == true, the truth crosshair's
+  // graticule overlays it cleanly (crosshair r > this r).
+  function drawDeclared(px, py, r, color) {
     ctx.save();
     ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const ang = -Math.PI / 2 + (i * Math.PI) / 5;
-      const rr = i % 2 === 0 ? r : r * 0.42;
-      const x = px + rr * Math.cos(ang);
-      const y = py + rr * Math.sin(ang);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = theme.halo;
-    ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.9;
-    ctx.stroke(); // halo pass keeps the glyph legible on any field
-    ctx.globalAlpha = 0.3;
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.25;
     ctx.fillStyle = color;
     ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = theme.halo;
+    ctx.lineWidth = 4.5;
+    ctx.stroke(); // halo pass keeps the ring legible on any field
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = theme.ink;
+    ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
   }
@@ -750,17 +744,19 @@ export function createRenderer(canvas) {
       ctx.restore();
     }
 
-    // declared star
+    // declared marker
     if (scene.declared) {
       const [px, py] = latLonToCss(scene.declared.lat, scene.declared.lon);
-      drawStar(px, py, 9, theme.accent);
+      drawDeclared(px, py, 9, theme.accent);
       if (scene.labels) tinyLabel(px, py + 18, "declared");
     }
 
     // truth crosshair
     if (scene.truth) {
       const [px, py] = latLonToCss(scene.truth.lat, scene.truth.lon);
-      drawCrosshair(px, py, 12);
+      // sized so its graticule sits cleanly over the declared ring (r 9)
+      // when declared == true: inner circle inside the ring, arms beyond it
+      drawCrosshair(px, py, 14);
       // label above the crosshair so it never collides with the declared
       // label when declared == truth
       if (scene.labels) tinyLabel(px, py - 18, "true location");
@@ -896,7 +892,7 @@ export function createRenderer(canvas) {
   // visible, and a boundary segment under the card cannot be seen either --
   // and the framed staging is centered in that region, not the full canvas.
   // Capped so a very narrow canvas never collapses the frame region.
-  function frameWindow(points, obstructRight = 0) {
+  function frameWindow(points, obstructRight = 0, obstructLeft = 0) {
     resize();
     if (!boundaryPts || !(wCss > 0)) return;
     let framed = null;
@@ -907,14 +903,15 @@ export function createRenderer(canvas) {
       });
       if (!framed.length) framed = null;
     }
-    const effW = framed
-      ? Math.max(wCss - Math.max(0, obstructRight), wCss * 0.55)
-      : wCss;
+    const cutR = Math.max(0, obstructRight);
+    const cutL = Math.max(0, obstructLeft);
+    const effW = framed ? Math.max(wCss - cutR - cutL, wCss * 0.45) : wCss;
     const fit = computeViewFit(effW, hCss, windowCenter, framed, boundaryPts);
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit.scale)));
     const s = Math.pow(2, zoom);
     // place the fit center at the middle of the unobstructed region
-    viewCenter = { wx: fit.cx + (wCss - effW) / (2 * s), wy: fit.cy };
+    // (canvas center minus region center, in world units)
+    viewCenter = { wx: fit.cx + (wCss / 2 - cutL - effW / 2) / s, wy: fit.cy };
     clampView();
   }
 

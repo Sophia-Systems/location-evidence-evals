@@ -51,20 +51,18 @@ const CAMBRIDGE = { lat: 52.205, lon: 0.119 };
 const TALLINN = { lat: 59.437, lon: 24.754 };
 const ST_PETERSBURG = { lat: 59.934, lon: 30.335 };
 
-// Scenario presets (PROMPT.md "Scenario presets") as data. `anchors` lists
-// facility ids with optional per-anchor pi overrides (default: neutral).
+// Scenario presets as data. `anchors` lists facility ids with optional
+// per-anchor pi overrides (default: neutral).
 //
-// Trust staging (DECISIONS.md item 26): presets whose lesson is ERASURE
-// (baseline, geometry, allowance) stage every anchor highly trusted at
-// pi = 0.02 (~5.6-bit ceiling, ~50x per-anchor outside suppression), so the
-// outside of a circle visibly drains. At the neutral 0.10 each anchor could
-// suppress outside cells by only 1/pi = 10x -- a trust haze that muddied
-// result 1. That haze is the TRUST preset's lesson, so preset 3 keeps
-// neutral 0.10 starting points; preset 5 keeps its own staging.
+// Trust staging (DECISIONS.md item 26): the baseline preset's lesson is
+// ERASURE, so it stages every anchor at low collusion risk pi = 0.02
+// (~5.6-bit ceiling, ~50x per-anchor outside suppression) and the outside
+// of a circle visibly drains. At the neutral 0.10 each anchor could
+// suppress outside cells by only 1/pi = 10x -- a trust haze.
 const HIGH_TRUST_PI = 0.02;
-// The four Cambridge presets pin the evaluation window on CENTER (54N 13E,
-// the v1 domain center) instead of inheriting their declared location
-// (DECISIONS.md item 42): their anchors reach 1,760 km northeast of
+// The baseline preset pins the evaluation window on CENTER (54N 13E, the
+// v1 domain center) instead of inheriting its declared location
+// (DECISIONS.md item 42): its anchors reach 1,760 km northeast of
 // Cambridge (Helsinki), so a Cambridge-centered window leaves only ~330 km
 // of window beyond the farthest anchor -- too little for the default view
 // to frame every anchor while keeping the window boundary off-screen.
@@ -75,59 +73,10 @@ export const PRESETS = [
     id: "baseline",
     name: "Baseline",
     caption:
-      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted; trust is preset 3's lesson.)",
+      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. Try dragging an anchor, or lowering one's trust.",
     declared: CAMBRIDGE,
-    windowCenter: CENTER,
-    trueLocation: CAMBRIDGE,
-    attack: "none",
-    allowance: 0,
-    anchors: [
-      { facility: "hetzner-helsinki", pi: HIGH_TRUST_PI },
-      { facility: "hetzner-falkenstein", pi: HIGH_TRUST_PI },
-      { facility: "equinix-paris", pi: HIGH_TRUST_PI },
-      { facility: "equinix-london", pi: HIGH_TRUST_PI },
-    ],
-  },
-  {
-    id: "geometry",
-    name: "Geometry",
-    caption:
-      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted; trust is preset 3's lesson.)",
-    declared: CAMBRIDGE,
-    windowCenter: CENTER,
-    trueLocation: CAMBRIDGE,
-    attack: "none",
-    allowance: 0,
-    anchors: [
-      { facility: "hetzner-helsinki", pi: HIGH_TRUST_PI },
-      { facility: "hetzner-falkenstein", pi: HIGH_TRUST_PI },
-      { facility: "equinix-paris", pi: HIGH_TRUST_PI },
-      { facility: "equinix-london", pi: HIGH_TRUST_PI },
-    ],
-  },
-  {
-    id: "trust",
-    name: "Trust",
-    caption:
-      "Lower an anchor's trust and the same receipts move the map less; no amount of probing beats the log2(1/pi) ceiling.",
-    declared: CAMBRIDGE,
-    windowCenter: CENTER,
-    trueLocation: CAMBRIDGE,
-    attack: "none",
-    allowance: 0,
-    anchors: [
-      { facility: "hetzner-helsinki" },
-      { facility: "hetzner-falkenstein" },
-      { facility: "equinix-paris" },
-      { facility: "equinix-london" },
-    ],
-  },
-  {
-    id: "allowance",
-    name: "The allowance",
-    caption:
-      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted; trust is preset 3's lesson.)",
-    declared: CAMBRIDGE,
+    declaredName: "Cambridge, UK",
+    trueName: "Cambridge, UK",
     windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -143,19 +92,18 @@ export const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and probe all a few times -- the map is fooled. (Raising its pi is the defense.)",
+      "Declared Tallinn -- but the machine is actually in St Petersburg, padding its answers to look like Tallinn. Padding only ever adds time, so probability mass settles on the truth, not the claim.",
     declared: TALLINN,
+    declaredName: "Tallinn, Estonia",
+    trueName: "St Petersburg, Russia",
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
     allowance: 0,
     // Trust staging (Phase 2, DECISIONS.md item 8): the verifier rates the
     // Telia Tallinn anchor an adversary of the attester's operator -- the most
-    // credible kind of witness, pi 0.03 -- while the three regional anchors
-    // are rated allies (pi 0.30). The demo: Telia is secretly colluding; flip
-    // its fabrication toggle and the verifier's own trust allocation sells the
-    // lie. The staging also concentrates honest discrimination in the anchor
-    // the fabrication removes, which is what lets the fooled posterior clear
-    // the honest anchors' remaining truth preference.
+    // credible kind of witness, collusion risk 0.03 -- while the three
+    // regional anchors are rated allies of the operator (0.30). The staging
+    // concentrates honest discrimination in the most-trusted anchor.
     anchors: [
       { facility: "telia-tallinn", pi: 0.03 },
       { facility: "hetzner-helsinki", pi: 0.3 },
@@ -312,10 +260,10 @@ export function createEngine(options = {}) {
   // per user adjudication (see viz/DECISIONS.md): a hand-added anchor should
   // read as part of the loaded scenario, not silently dilute it with a
   // neutral-trust outlier. Tracks the loaded preset's trust staging -- the
-  // erasure presets (baseline/geometry/allowance) stage HIGH_TRUST_PI; the
-  // trust preset and evasive preset (and no-preset free play) stay neutral.
+  // erasure preset (baseline) stages HIGH_TRUST_PI; the evasive preset (and
+  // no-preset free play) stays neutral.
   let defaultAnchorPi = PI_PRESETS.neutral;
-  const HIGH_TRUST_PRESET_IDS = new Set(["baseline", "geometry", "allowance"]);
+  const HIGH_TRUST_PRESET_IDS = new Set(["baseline"]);
 
   function computeDistField(a) {
     const { lats, lons, cellCount } = grid;

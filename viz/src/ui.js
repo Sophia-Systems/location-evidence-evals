@@ -22,35 +22,19 @@ const ANIM_MS = 350;
 // ---------------------------------------------------------------------------
 const INFO = {
   vc:
-    "The lightspeed conversion used for exclusion radii. Nothing physical outruns light in vacuum, so a radius computed at this speed is safe against any attester -- the security bound. Fixed: v_c = 300 km/ms.",
+    "Exclusion radii are computed at lightspeed (v_c = 300 km/ms). Nothing physical outruns light, so a circle drawn at this speed is safe against any attester.",
   vfiber:
-    "How fast signals actually travel in fiber: c/n with n = 1.47. Used to simulate honest round trips and to shape expectations inside the circle -- never for exclusion, since straighter routes or microwave links can beat it. v_fiber = 204 km/ms.",
-  delta_att:
-    "Time the attester's machine spends handling a probe before answering -- waking the process, parsing, signing. Sits inside every measurement. Symbol: δ_att. (Simulator: the true value; the verifier never observes it directly.)",
-  path_noise:
-    "Extra time from indirect routes and queueing. It is one-sided: noise only ever ADDS time, so it can make a machine look farther away, never closer. Drawn from an exponential with this mean.",
+    "How fast signals actually travel in fiber: c/1.47 ≈ 204 km/ms. Used to simulate honest round trips and shape expectations inside a circle -- never for exclusion.",
   allowance:
-    "The slice of each measured round trip the verifier writes off as not-travel-time before converting to distance: r = v_c × (RTT − allowance) / 2. Too small merely loosens the circles; too large shrinks them below what physics justifies and the TRUE location can fall outside -- the assessment becomes wrong, not vague. Every 1 ms written off shrinks each radius by 150 km. The rule: write off only time no attester could avoid spending.",
+    "Round-trip time the verifier writes off as processing before converting to distance (each 1 ms shrinks every radius by 150 km). Set it above the attester's true overhead and circles shrink below physics -- the assessment becomes wrong, not vague.",
   interior:
-    "How quickly the evaluator's belief fades moving inward from a circle's edge. Kept deliberately slow (conservative): a receipt mostly says “not outside this circle” and almost nothing about where inside it, because a nearby machine can always answer slowly -- never faster than light. Mean of the assumed one-sided excess, μ_int (ms).",
-  pi:
-    "The verifier's prior probability that this anchor is compromised -- signing intervals it never measured. Evidence moves the map in proportion to trust: a distrusted anchor's receipts are partly explained away as possibly fabricated, and its total contribution caps at log2(1/π) bits no matter how many receipts arrive. (The paper writes ε_a; this page uses π per the build spec.)",
-  bundle:
-    "How one anchor's receipts combine. rtt-min (default): receipts from one anchor share a path, so their distance information is nearly exhausted by the smallest of them -- redundancy discounting. product: multiply per-receipt likelihoods instead.",
+    "How quickly belief fades moving inward from a circle's edge. Kept deliberately slow: a receipt mostly says “not outside this circle”, and little about where inside it.",
+  collusion:
+    "The chance this anchor colludes with the attester. Higher risk means this anchor's evidence carries less weight.",
   grid:
-    "The lattice for the posterior over the region under evaluation (the dashed window). Square or equal-area hex, at the chosen resolution. Layout only -- every distance that feeds the model is a great-circle distance, whatever the cells look like. Move the window with “evaluate here”.",
-  interval:
-    "One assessment covers one stated time interval; only receipts stamped inside it contribute. Combining them assumes the machine did not move during the interval (stationarity) -- the interval and that assumption travel with the result in Q.",
-  attack:
-    "World truth: how the attester behaves. Inflation pads answers toward consistency with the declared location where physics permits -- padding only ever adds time, which pushes apparent location AWAY from honest anchors, so it cannot fake presence. Deflation answers faster than the verifier's allowance assumes (δ_att drops to 0.005 ms) -- the class that produces false presence.",
-  fabricate:
-    "SIMULATION control, not a verifier input. A dishonest anchor never measures the attester: it signs an invented receipt consistent with the DECLARED location. Its fabricated story may violate the true-distance floor -- physics binds honest measurement, not invention. The verifier's only defense is this anchor's π.",
+    "The lattice holding the posterior over the region under evaluation (the dashed window). Display layout only -- every distance in the model is great-circle.",
   floor:
-    "Color is on a log scale relative to the brightest cell, and overall brightness tracks how much the evidence discriminates: a shallow or spread-out posterior renders as a dim haze, while deep, concentrated belief earns the ramp's full intensity. Beyond a lightspeed radius the likelihood falls off a cliff -- but lands on a tiny floor (10⁻⁶ of peak), not zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt, so the evaluation keeps that residual explicit. The residual brightness OUTSIDE a circle is set by anchor trust (the π mixture), not physics: a distrusted anchor's exclusion can be partly explained away as possibly fabricated, so only trusted anchors erase deeply.",
-  posture:
-    "The assumptions the current map is computed under -- the qualifiers Q that travel with any location credibility assessment. This evaluator always assumes a COMPLIANT attester (answers as fast as it can); the evasive presets deliberately violate that assumption so you can watch what it costs. Standing dependencies (hardware binding, signature soundness) are in “About this model”.",
-  receipts:
-    "Total receipts whose anchor timestamps fall inside the assessment interval. Receipts outside the interval exist but do not contribute.",
+    "Color is log-scaled relative to the brightest cell; a dim haze means the evidence discriminates little. Outside a circle, brightness never drops to zero -- residual doubt (collusion, forged signatures, faults) is kept explicit, and its depth is set by anchor trust.",
 };
 
 // ---------------------------------------------------------------------------
@@ -69,11 +53,6 @@ function fmtClock(ms) {
   const p = (n) => String(n).padStart(2, "0");
   return `${p(hh)}:${p(mm)}:${p(ss)}`;
 }
-const fmtHM = (ms) => fmtClock(ms).slice(0, 5);
-const parseHM = (str) => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(str);
-  return m ? (Number(m[1]) * 3600 + Number(m[2]) * 60) * 1000 : null;
-};
 
 export function buildApp(root) {
   const engine = createEngine({ seed: (Date.now() % 100000) + 1 });
@@ -83,7 +62,7 @@ export function buildApp(root) {
     clockMs: NOON,
     revealTruth: false,
     ramp: "magma",
-    opacity: 0.75,
+    opacity: 1,
     hoverId: null,
     dragId: null,
     dragMoved: false,
@@ -100,51 +79,88 @@ export function buildApp(root) {
     <div class="map-pane">
       <canvas id="map"></canvas>
 
-      <!-- scenario card: top-left, the entry point -- must not get lost -->
+      <!-- left column: scenario card (the entry point) + evidence log -->
+      <div class="left-col">
       <section class="card scenario-card">
         <div class="brand">
-          <h1><span class="mark">◉</span> Location evidence</h1>
-          <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
+          <h1><span class="mark">◉</span> Verifying compute location</h1>
         </div>
-        <div class="preset-chips" id="preset-chips"></div>
-        <div class="preset-caption" id="preset-caption"></div>
-        <div class="scenario-actions">
-          <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
-          <button class="btn small" id="reset-btn" title="return to this preset's initial state">reset</button>
+        <p class="blurb">Verifying the location of advanced AI chips is a way to
+          detect whether they're being used as declared, and reduce the
+          proliferation risk of dangerous models.</p>
+        <p class="blurb">Latency-based location verification asks machines at
+          known locations -- <b>anchor nodes</b> -- to probe <b>attester nodes</b>
+          operating sensitive GPUs. Attesters cryptographically sign challenges
+          then respond; distance is inferred from the round-trip time measured
+          by anchors. Since these pings can't exceed the speed of light, each
+          receipt bounds where the attester machine can be.</p>
+        <p class="blurb">This demo visualizes how new evidence updates the
+          <b>spatial probability distribution</b> of where an attester might be.
+          It is part of <a href="https://johnx.co/research" target="_blank" rel="noopener">ongoing research</a>
+          to advance location verification technology so we can make
+          better-informed policy decisions to govern AI advancement.</p>
+        <details class="fold tutorial" id="tutorial-fold" open>
+          <summary>Instructions</summary>
+          <div class="fold-body">
+            <ol>
+              <li>Select a scenario below.</li>
+              <li>Click “Probe” on an anchor to collect a signed receipt.</li>
+              <li>Watch the spatial probability distribution update on the map.</li>
+              <li>Drag anchors to move them, or add new ones.</li>
+              <li>Adjust parameters -- e.g. an anchor's collusion risk.</li>
+            </ol>
+          </div>
+        </details>
+        <div class="sec-head">Scenario</div>
+        <div class="chips-row">
+          <div class="preset-chips" id="preset-chips"></div>
+          <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
+        </div>
+        <div class="att-block">
+          <div class="att-sub">Attester</div>
+          <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
+          <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
+          <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
+          <label class="switch att-reveal"><input type="checkbox" id="reveal-truth"><span>Reveal true location</span></label>
         </div>
       </section>
+
+      <!-- evidence log: the accumulating set of signed receipts -->
+      <section class="card evidence-card">
+        <div class="evidence-head"><span>Evidence</span><span class="evidence-count" id="evidence-count">No receipts yet</span></div>
+        <div class="evidence-list" id="evidence-list"></div>
+      </section>
+      </div>
 
       <!-- parameters column: floating right side, collapsible, scrolls within itself -->
       <aside class="card params-card" id="params-card">
         <div class="params-head">
           <span>parameters</span>
-          <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">‹</button>
+          <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">▾</button>
         </div>
         <div class="params-scroll" id="params-scroll">
         <section class="panel">
-          <h2>anchors
+          <h2>Anchors
             <span class="h-actions">
-              <button class="btn small" id="probe-all">probe all</button>
+              <button class="btn small" id="probe-all">Probe all</button>
               <span class="add-wrap">
-                <button class="btn small primary" id="add-anchor">+ add</button>
+                <button class="btn small primary" id="add-anchor">+ Add</button>
                 <div class="add-menu" id="add-menu"></div>
               </span>
             </span>
           </h2>
           <div class="anchor-list" id="anchor-list"></div>
-          <div class="hint">click an anchor on the map to probe it · drag to move (moving clears its receipts)</div>
+          <div class="hint">Click an anchor on the map to probe it · drag to move (moving clears its receipts)</div>
         </section>
 
         <section class="panel">
-          <h2>verifier parameters</h2>
-          <div class="row"><span class="lbl">allowance ${info("allowance")}</span>
+          <h2>Verifier parameters</h2>
+          <div class="row"><span class="lbl">Allowance ${info("allowance")}</span>
             <input type="range" id="allowance" min="0" max="0.5" step="0.005" value="0">
             <span class="val" id="allowance-val"></span></div>
-          <div class="row"><span class="lbl">interior fade μ ${info("interior")}</span>
+          <div class="row"><span class="lbl">Interior fade μ ${info("interior")}</span>
             <input type="range" id="interior" min="0.2" max="5" step="0.1" value="1.2">
             <span class="val" id="interior-val"></span></div>
-          <div class="row"><span class="lbl">bundle mode ${info("bundle")}</span>
-            <span class="seg" id="bundle-seg"><button data-v="rtt-min">rtt-min</button><button data-v="product">product</button></span></div>
           <div class="row"><span class="lbl">v_c ${info("vc")}</span>
             <span class="fixed-val">300 km/ms · fixed (security bound)</span></div>
           <div class="row"><span class="lbl">v_fiber ${info("vfiber")}</span>
@@ -152,62 +168,39 @@ export function buildApp(root) {
         </section>
 
         <section class="panel">
-          <h2>simulator · world truth <span class="h-actions"><span class="sim-tag" style="font:700 8.5px var(--font-mono);letter-spacing:.1em;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 5px;">simulation</span></span></h2>
-          <div class="row"><span class="lbl">attester ${info("attack")}</span>
-            <span class="seg" id="attack-seg"><button data-v="none">honest</button><button data-v="inflation">inflates</button><button data-v="deflation">deflates</button></span></div>
-          <div class="row"><span class="lbl">δ_att (true) ${info("delta_att")}</span>
-            <input type="range" id="delta-att" min="0" max="0.3" step="0.005" value="0.05">
-            <span class="val" id="delta-att-val"></span></div>
-          <div class="row"><span class="lbl">path noise mean ${info("path_noise")}</span>
-            <input type="range" id="path-noise" min="0" max="0.5" step="0.01" value="0.1">
-            <span class="val" id="path-noise-val"></span></div>
-        </section>
-
-        <section class="panel">
-          <h2>assessment interval</h2>
-          <div class="interval-line">receipts from
-            <input type="time" id="int-start" value="12:00" step="60"> to
-            <input type="time" id="int-end" value="12:05" step="60"> UTC contribute ${info("interval")}
-          </div>
-          <div class="clock-line"><span>sim clock <b id="sim-clock">12:00:00</b> UTC</span>
-            <span><b id="receipt-count">0</b> receipts in interval ${info("receipts")}</span></div>
-        </section>
-
-        <section class="panel">
-          <h2>display</h2>
-          <div class="row"><span class="lbl">grid ${info("grid")}</span>
+          <h2>Display</h2>
+          <div class="row"><span class="lbl">Grid ${info("grid")}</span>
             <span class="seg" id="grid-seg"><button data-v="square">square</button><button data-v="hex">hex</button></span>
             <span class="val" id="grid-val"></span></div>
-          <div class="row"><span class="lbl">resolution</span>
+          <div class="row"><span class="lbl">Resolution</span>
             <input type="range" id="grid-res" min="80" max="220" step="20" value="180">
             <span class="val" id="grid-res-val"></span></div>
-          <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
+          <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">Color ramp</span>
             <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
-          <div class="row"><span class="lbl">overlay opacity</span>
-            <input type="range" id="opacity" min="10" max="100" step="5" value="75">
+          <div class="row"><span class="lbl">Overlay opacity</span>
+            <input type="range" id="opacity" min="10" max="100" step="5" value="100">
             <span class="val" id="opacity-val"></span></div>
         </section>
 
         <section class="panel">
-          <h2>about</h2>
+          <h2>About</h2>
           <details class="fold" id="about-fold">
-            <summary>about this model</summary>
+            <summary>About this model</summary>
             <div class="fold-body">
-              <p><b>A windowed posterior on a round Earth.</b> The map is global, but the model's hypothesis space is the ~3,600 × 3,600 km "region under evaluation" -- the dashed window holding the posterior grid. Anchors can sit anywhere on Earth and every distance is great-circle; "evaluate here" moves the window (keeping all receipts) rather than growing it, because a whole-Earth grid at useful resolution would be millions of cells for no extra insight: the claim under test is always local.</p>
-              <p><b>Two standing dependencies.</b> Everything here locates <i>the machine answering with the attester's signing key</i>. Binding that key to particular hardware is a separate, unsolved problem. And receipts are only as good as their signatures: an adversary who can forge the scheme voids every bound on this page.</p>
-              <p><b>Why the floor is not zero.</b> Beyond a lightspeed radius the likelihood drops off a cliff but lands on a small residual (10⁻⁶ of peak) rather than zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt. The evaluation keeps that residual explicit instead of rounding it away.</p>
-              <p><b>Geography is context, not claim.</b> Country boundaries are drawn to orient you; nothing in the computation reads them. Geofences and P(inside region) belong to the policy stage, deliberately not built here.</p>
+              <p>The posterior lives on the dashed ~3,600 km window -- the region under evaluation. Every distance is great-circle; country borders are drawn only to orient you.</p>
+              <p>Everything here locates <i>the machine holding the attester's signing key</i>; binding that key to particular hardware is a separate, unsolved problem, and forged signatures would void every bound on this page.</p>
+              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Seth Docherty, Gaurav Yadav, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, Jack Cheng, and Nikita Kezins for feedback and discussion.</p>
             </div>
           </details>
           <details class="fold probe-anatomy" id="anatomy-fold">
-            <summary>anatomy of a probe</summary>
+            <summary>Anatomy of a probe</summary>
             <div class="fold-body">
-              <p>One measurement is a four-packet exchange, timed on the <b>anchor's clock alone</b> -- no synchronization. The anchor times challenge-out to signed-nonce-in, then signs the interval it measured; the attester relays the receipt but cannot alter it.</p>
+              <p>One measurement is a four-packet exchange, timed on the <b>anchor's clock alone</b> -- no synchronization. The anchor signs the interval it measured; the attester relays the receipt but cannot alter it.</p>
               <svg viewBox="0 0 260 74" aria-label="round-trip delay budget">
                 <line x1="10" y1="30" x2="250" y2="30" stroke="var(--line)" stroke-width="1"/>
-                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="var(--accent)"/>
                 <line class="an-seg" x1="100" y1="30" x2="128" y2="30" stroke="var(--warn)"/>
-                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="var(--accent)"/>
                 <line class="an-seg" x1="220" y1="30" x2="248" y2="30" stroke="var(--ink-faint)"/>
                 <text class="an-lbl" x="14" y="16">path out</text>
                 <text class="an-lbl" x="88" y="52">δ_att: wake, parse, sign</text>
@@ -221,19 +214,17 @@ export function buildApp(root) {
         </div>
       </aside>
 
-      <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
+      <div class="placing-note" id="placing-note">Click the map to place the anchor · Esc to cancel</div>
 
       <div class="hud">
-        <button class="btn small view-btn" id="evaluate-here-btn" type="button" title="recenter the region under evaluation on the current view — receipts are kept; the hypothesis space moves">⌖ evaluate here</button>
-        <button class="btn small view-btn" id="reset-view-btn" type="button" title="frame the region under evaluation">⤢ reset view</button>
+        <button class="btn small view-btn" id="reset-view-btn" type="button" title="Frame the region under evaluation">⤢ Reset view</button>
         <div class="legend">
-          <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
+          <div class="title-row"><span>Posterior probability</span>${info("floor")}</div>
           <div class="bar" id="legend-bar"></div>
-          <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
+          <div class="ends"><span>Floor</span><span>log scale · dim = haze</span><span>Peak</span></div>
         </div>
       </div>
 
-      <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
       <div class="map-attribution" id="map-attribution">© OpenStreetMap contributors © CARTO</div>
       <div id="map-tip"></div>
     </div>
@@ -402,26 +393,13 @@ export function buildApp(root) {
   // ---- global readouts ----------------------------------------------------
 
   function updateGlobalReadouts() {
-    const ro = state.lastReadouts;
-    $("#receipt-count").textContent = ro.receiptsInInterval;
-    $("#sim-clock").textContent = fmtClock(state.clockMs);
-    const ev = engine.getEvaluatorParams();
-    const pis = ro.perAnchor.map((a) => a.pi);
-    const piSummary = pis.length
-      ? `π ${Math.min(...pis).toFixed(2)}–${Math.max(...pis).toFixed(2)}`
-      : "no anchors";
-    $("#assumptions-text").textContent =
-      `assumes compliant attester · allowance ${ev.allowance.toFixed(3)} ms` +
-      ` · trust as shown (${piSummary}) · receipts ${fmtHM(ev.interval.startMs)}–${fmtHM(
-        ev.interval.endMs
-      )} UTC (${ro.receiptsInInterval} contribute) · uniform prior`;
+    updateEvidenceLog();
   }
 
   // ---- clock & probing ----------------------------------------------------
 
   function advanceClock() {
     state.clockMs += 7000 + Math.floor(Math.random() * 6000);
-    $("#sim-clock").textContent = fmtClock(state.clockMs);
   }
 
   function doProbe(anchorId) {
@@ -436,9 +414,85 @@ export function buildApp(root) {
     refresh({ animate: true });
   });
 
+  // ---- evidence log -------------------------------------------------------
+  // The accumulating evidence set: one row per signed receipt, newest first.
+  // Rebuilt from engine state on every refresh, so rows vanish exactly when
+  // their receipts do (preset load, reset, moving an anchor). Each row
+  // expands to a simplified receipt modeled on location-proofs'
+  // plugin-rtt-anchor LocationOffset -- key illustrative fields only, with
+  // deterministic pseudo pubkeys/signatures standing in for the real ones.
+
+  const evidenceOpen = new Set(); // keys of user-expanded rows
+  let evidenceFingerprint = ""; // last-rendered receipt set; skip no-op rebuilds
+
+  // Deterministic pseudo-hex (FNV-1a scramble) -- illustrative, not crypto.
+  function fakeHex(str, len) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    let out = "";
+    while (out.length < len) {
+      h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0;
+      out += h.toString(16).padStart(8, "0");
+    }
+    return out.slice(0, len);
+  }
+
+  const receiptKey = (r) => `${r.anchorId}@${r.timestampMs}@${r.rtt}`;
+
+  function receiptDetail(r, a) {
+    return [
+      `{`,
+      `  anchor:       "${a.id}"`,
+      `  anchor_pos:   [${a.lat.toFixed(3)}, ${a.lon.toFixed(3)}]`,
+      `  observed_at:  ${fmtClock(r.timestampMs)} UTC`,
+      `  measured_rtt: ${r.rtt.toFixed(3)} ms`,
+      `  challenged:   true`,
+      `  pubkey:       ed25519:${fakeHex(a.id, 8)}…`,
+      `  signature:    ed25519:${fakeHex(receiptKey(r), 8)}…`,
+      `}`,
+    ].join("\n");
+  }
+
+  function updateEvidenceLog() {
+    const rows = [];
+    for (const a of engine.getAnchors()) {
+      for (const r of engine.getAnchorReceipts(a.id)) rows.push({ r, a });
+    }
+    rows.sort((x, y) => y.r.timestampMs - x.r.timestampMs);
+    $("#evidence-count").textContent =
+      rows.length === 0
+        ? "No receipts yet — probe an anchor"
+        : `${rows.length} signed receipt${rows.length === 1 ? "" : "s"}`;
+    const fingerprint = rows.map(({ r }) => receiptKey(r)).join("|");
+    if (fingerprint === evidenceFingerprint) return;
+    evidenceFingerprint = fingerprint;
+    const live = new Set(rows.map(({ r }) => receiptKey(r)));
+    for (const k of evidenceOpen) if (!live.has(k)) evidenceOpen.delete(k);
+    $("#evidence-list").innerHTML = rows
+      .map(({ r, a }) => {
+        const key = receiptKey(r);
+        return `<details class="receipt" data-key="${esc(key)}"${evidenceOpen.has(key) ? " open" : ""}>
+          <summary><span class="r-time">${fmtClock(r.timestampMs)}</span><span class="r-name">${esc(a.name)}</span><span class="r-rtt">${r.rtt.toFixed(3)} ms</span></summary>
+          <pre>${esc(receiptDetail(r, a))}</pre>
+        </details>`;
+      })
+      .join("");
+  }
+
+  // rows are re-rendered wholesale, so open-state is tracked by key
+  $("#evidence-list").addEventListener("toggle", (e) => {
+    const d = e.target;
+    if (!(d instanceof HTMLElement) || !d.dataset.key) return;
+    if (d.open) evidenceOpen.add(d.dataset.key);
+    else evidenceOpen.delete(d.dataset.key);
+  }, true);
+
   // ---- anchor cards -------------------------------------------------------
 
-  const cardRefs = new Map(); // id -> {el, stats, piSlider, piVal, bits, presetBtns, warnNote, simRow, fabToggle}
+  const cardRefs = new Map(); // id -> {el, stats, piSlider, piVal, bits, presetBtns, warnNote}
 
   function rebuildAnchorCards() {
     const list = $("#anchor-list");
@@ -453,7 +507,7 @@ export function buildApp(root) {
         <header>
           <span class="dot"></span>
           <span class="name">${esc(a.name)}</span>
-          <button class="btn small primary probe-one" type="button">probe</button>
+          <button class="btn small primary probe-one" type="button">Probe</button>
           <button class="btn small ghost remove-one" title="remove anchor" type="button">×</button>
         </header>
         <div class="stats">
@@ -463,22 +517,18 @@ export function buildApp(root) {
           <span>receipts in T <b class="s-count">0</b></span>
         </div>
         <div class="pi-row">
-          <span class="pi-lbl">π ${info("pi")}</span>
+          <span class="pi-lbl">collusion risk ${info("collusion")}</span>
           <input type="range" min="0.01" max="0.5" step="0.01" value="${a.pi}">
           <span class="pi-val">${a.pi.toFixed(2)}</span>
         </div>
         <div class="id-presets">
+          <button data-pi="0.03" type="button">adversary 0.03</button>
           <button data-pi="0.10" type="button">neutral 0.10</button>
           <button data-pi="0.30" type="button">ally 0.30</button>
-          <button data-pi="0.03" type="button">adversary 0.03</button>
         </div>
-        <div class="bits">this anchor's contribution caps at log2(1/π) = <b class="s-bits"></b> bits</div>
-        <div class="warn-note" hidden></div>
-        <div class="sim-row" hidden>
-          <span class="sim-tag">simulation</span>
-          <label class="switch sim"><input type="checkbox" class="fab-toggle"><span>this anchor fabricates for the declared location</span></label>
-          ${info("fabricate")}
-        </div>`;
+        <div class="id-hint">An <b>adversary</b> of the attester's operator is least likely to cover for it — the most credible witness</div>
+        <div class="bits">This anchor's influence caps at log2(1/risk) = <b class="s-bits"></b> bits</div>
+        <div class="warn-note" hidden></div>`;
       list.appendChild(el);
 
       const refs = {
@@ -492,8 +542,6 @@ export function buildApp(root) {
         bits: el.querySelector(".s-bits"),
         presetBtns: [...el.querySelectorAll(".id-presets button")],
         warnNote: el.querySelector(".warn-note"),
-        simRow: el.querySelector(".sim-row"),
-        fabToggle: el.querySelector(".fab-toggle"),
       };
       cardRefs.set(a.id, refs);
 
@@ -518,12 +566,6 @@ export function buildApp(root) {
           refresh({ animate: true });
         });
       }
-      refs.fabToggle.checked = engine.isAnchorDishonest(a.id);
-      refs.fabToggle.addEventListener("change", () => {
-        engine.setAnchorDishonest(a.id, refs.fabToggle.checked);
-        updateAnchorCards();
-        drawScene();
-      });
       el.addEventListener("mouseenter", () => setHover(a.id));
       el.addEventListener("mouseleave", () => setHover(null));
     }
@@ -546,13 +588,7 @@ export function buildApp(root) {
       for (const b of r.presetBtns) {
         b.classList.toggle("active", Math.abs(Number(b.dataset.pi) - ra.pi) < 1e-9);
       }
-      const dishonest = engine.isAnchorDishonest(ra.id);
-      r.el.classList.toggle("dishonest", dishonest);
       r.el.classList.toggle("hovered", state.hoverId === ra.id);
-      // fabrication toggle: an evasive-preset (simulation) affordance
-      const showSim = state.presetId === "evasive" || dishonest;
-      r.simRow.hidden = !showSim;
-      r.fabToggle.checked = dishonest;
       // impossible receipt: the bundle's floor excludes every cell (cells are
       // evaluated at the nearest point of their extent, hence the cellRadKm)
       const minD = state.minDist.get(ra.id) ?? 0;
@@ -563,7 +599,7 @@ export function buildApp(root) {
       r.warnNote.hidden = !impossible;
       if (impossible) {
         r.warnNote.textContent =
-          "impossible receipt: the exclusion radius excludes every cell in the domain — this bundle contributes nothing (a physical impossibility under the honest model).";
+          "Impossible receipt: the exclusion radius excludes every cell in the domain — this bundle contributes nothing (a physical impossibility under the honest model).";
       }
     }
   }
@@ -578,7 +614,7 @@ export function buildApp(root) {
         (f) =>
           `<button data-fid="${f.id}" ${have.has(f.id) ? "disabled" : ""} type="button">${esc(f.name)}</button>`
       ).join("") +
-      `<div class="sep"></div><button data-place="1" type="button">click on the map…</button>`;
+      `<div class="sep"></div><button data-place="1" type="button">Click on the map…</button>`;
     for (const b of menu.querySelectorAll("button[data-fid]")) {
       b.addEventListener("click", () => {
         engine.addAnchor({ facility: b.dataset.fid });
@@ -721,12 +757,12 @@ export function buildApp(root) {
     const ra = ro.perAnchor.find((a) => a.id === id);
     if (!ra) return;
     tip.innerHTML = `
-      <div class="tip-name">${esc(ra.name)}${engine.isAnchorDishonest(id) ? ' <span style="color:var(--warn)">· fabricating</span>' : ""}</div>
+      <div class="tip-name">${esc(ra.name)}</div>
       <div class="tip-stats">latest RTT  ${fmtMsVal(ra.latestRtt)}
 rtt_min     ${fmtMsVal(ra.rttMin)}
 exclusion r ${fmtKm(ra.exclusionRadiusKm)}
-π ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</div>
-      <div class="tip-hint">click to probe · drag to move</div>`;
+risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
+      <div class="tip-hint">Click to probe · drag to move</div>`;
     const pane = canvas.parentElement.getBoundingClientRect();
     tip.style.left = `${clientX - pane.left + 14}px`;
     tip.style.top = `${clientY - pane.top + 10}px`;
@@ -981,43 +1017,26 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     };
   }
 
-  const bundleSeg = wireSeg("#bundle-seg", (v) => {
-    engine.setEvaluatorParams({ bundleMode: v });
-    refresh({ animate: true });
-  });
+  // ---- attester card ------------------------------------------------------
+  // The machine under test, as staged by the scenario. World truth carries no
+  // knobs any more (John's call: free-play simulator controls confused more
+  // than they taught); the scenario defines the attester, this card explains
+  // it, and the true location stays hidden until revealed.
 
-  const attackSeg = wireSeg("#attack-seg", (v) => {
-    engine.setSimulator({ attack: v });
-  });
+  const fmtLatLon = (p) => `${p.lat.toFixed(2)}°N ${p.lon.toFixed(2)}°E`;
 
-  const deltaEl = $("#delta-att");
-  const syncDeltaLabel = () => {
-    $("#delta-att-val").textContent = `${Number(deltaEl.value).toFixed(3)} ms`;
-  };
-  deltaEl.addEventListener("input", () => {
-    engine.setSimulator({ delta_att: Number(deltaEl.value) });
-    syncDeltaLabel();
-  });
-
-  const noiseEl = $("#path-noise");
-  const syncNoiseLabel = () => {
-    $("#path-noise-val").textContent = `${Number(noiseEl.value).toFixed(2)} ms`;
-  };
-  noiseEl.addEventListener("input", () => {
-    engine.setSimulator({ path_noise_mean: Number(noiseEl.value) });
-    syncNoiseLabel();
-  });
-
-  // ---- interval controls --------------------------------------------------
-
-  function applyInterval() {
-    const s = parseHM($("#int-start").value) ?? NOON;
-    const e2 = parseHM($("#int-end").value) ?? NOON + 300e3;
-    engine.setAssessmentInterval(s, e2 + 59_999); // closed interval, minute granularity
-    refresh({ animate: true });
+  function updateAttesterCard(preset) {
+    const sim = engine.getSimulator();
+    $("#att-declared").textContent =
+      `${preset.declaredName ?? "—"} · ${fmtLatLon(sim.declared)}`;
+    $("#att-behavior").textContent =
+      sim.attack === "none"
+        ? "Honest — answers as quickly as it can"
+        : "Evasive — manipulates responses";
+    $("#att-true").textContent = state.revealTruth
+      ? `${preset.trueName ?? "—"} · ${fmtLatLon(sim.trueLocation)}`
+      : "Hidden";
   }
-  $("#int-start").addEventListener("change", applyInterval);
-  $("#int-end").addEventListener("change", applyInterval);
 
   // ---- display controls ---------------------------------------------------
 
@@ -1092,6 +1111,7 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
 
   $("#reveal-truth").addEventListener("change", (e) => {
     state.revealTruth = e.target.checked;
+    if (state.preset) updateAttesterCard(state.preset);
     drawScene();
   });
 
@@ -1111,43 +1131,34 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
 
   // ---- view controls: reset pan/zoom (item 2) -------------------------------
 
-  // Default-view framing (item 42): while a preset's staging is the frame of
-  // reference, the default view frames all its anchors plus the declared
-  // marker (current positions -- drags count); after "evaluate here" there
-  // is no natural anchor frame, so the window cover fit applies instead.
-  let frameMode = "anchors"; // "anchors" | "window"
-  const framePoints = () =>
-    frameMode === "anchors"
-      ? [engine.getSimulator().declared, ...engine.getAnchors()]
-      : null;
-  // The parameters column floats over the canvas's right edge; a staged
-  // anchor "on-canvas" underneath it is not visible, so framing targets the
-  // unobstructed region (item 42).
+  // Default-view framing (item 42): the default view frames the preset's
+  // anchors plus the declared marker (current positions -- drags count) --
+  // and the true location whenever it is revealed, so the evasive lesson's
+  // two poles (claim and truth) are both on screen.
+  const framePoints = () => {
+    const sim = engine.getSimulator();
+    const pts = [sim.declared, ...engine.getAnchors()];
+    if (state.revealTruth) pts.push(sim.trueLocation);
+    return pts;
+  };
+  // The parameters column floats over the canvas's right edge and the
+  // scenario column over its left; a staged marker "on-canvas" underneath
+  // either is not visible, so framing targets the unobstructed gap between
+  // them (item 42).
   const frameObstruction = () => {
     const cardRect = $("#params-card").getBoundingClientRect();
     const mapRect = canvas.getBoundingClientRect();
     return Math.max(0, mapRect.right - cardRect.left);
   };
+  const frameObstructionLeft = () => {
+    const cardRect = root.querySelector(".scenario-card").getBoundingClientRect();
+    const mapRect = canvas.getBoundingClientRect();
+    return Math.max(0, cardRect.right - mapRect.left);
+  };
 
   $("#reset-view-btn").addEventListener("click", () => {
-    renderer.frameWindow(framePoints(), frameObstruction());
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
     drawScene();
-  });
-
-  // "evaluate here": recenter the evaluation window (the model's hypothesis
-  // space) on the current map view center. Receipts survive -- the evidence
-  // did not change, the hypothesis space moved -- so the engine recomputes
-  // distance fields and the posterior over the new region while every
-  // receipt keeps contributing.
-  $("#evaluate-here-btn").addEventListener("click", () => {
-    const c = renderer.getViewCenterLatLon();
-    engine.setWindowCenter(c.lat, c.lon);
-    renderer.setWindow(engine.getWindowCenter());
-    frameMode = "window"; // no natural anchor frame here (item 42)
-    renderer.frameWindow(); // item-41 inset cover fit on the new region
-    for (const id of state.minDist.keys()) computeMinDist(id);
-    displayT = null; // new region: snap, never tween across hypothesis spaces
-    refresh({ animate: false });
   });
 
   {
@@ -1164,28 +1175,25 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   function loadPreset(id) {
     const preset = engine.loadPreset(id);
     state.presetId = id;
+    state.preset = preset;
     state.clockMs = NOON;
     state.hoverId = null;
     state.minDist.clear();
     for (const a of engine.getAnchors()) computeMinDist(a.id);
     setPlacing(false);
 
+    // reveal truth where the preset's lesson needs it (the evasive attester:
+    // watching mass settle on the truth, not the claim, IS the lesson).
+    // Set BEFORE framing: framePoints includes the truth when revealed.
+    state.revealTruth = id === "evasive";
+    $("#reveal-truth").checked = state.revealTruth;
+
     // the evaluation window recentered on the preset's staging (its pinned
     // windowCenter, or its declared location): sync the renderer's window
     // (boundary + heat raster) and frame all staged anchors plus the
     // declared marker, clamped inside the window (item 42)
     renderer.setWindow(engine.getWindowCenter());
-    frameMode = "anchors";
-    renderer.frameWindow(framePoints(), frameObstruction());
-
-    // interval back to the preset default (PROMPT.md's example window)
-    $("#int-start").value = "12:00";
-    $("#int-end").value = "12:05";
-    engine.setAssessmentInterval(NOON, NOON + 300e3 + 59_999);
-
-    // reveal truth where the preset's lesson needs it (the allowance attack)
-    state.revealTruth = id === "allowance";
-    $("#reveal-truth").checked = state.revealTruth;
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
 
     // sync controls to engine state
     const ev = engine.getEvaluatorParams();
@@ -1193,18 +1201,11 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     syncAllowanceLabel();
     interiorEl.value = ev.assumed_interior_mean;
     syncInteriorLabel();
-    bundleSeg.set(ev.bundleMode);
-    const sim = engine.getSimulator();
-    attackSeg.set(sim.attack);
-    deltaEl.value = sim.delta_att;
-    syncDeltaLabel();
-    noiseEl.value = sim.path_noise_mean;
-    syncNoiseLabel();
+    updateAttesterCard(preset);
 
-    // chips + caption
+    // chips
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
-    $("#preset-caption").textContent = preset.caption;
 
     // anatomy panel accompanies preset 1
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";

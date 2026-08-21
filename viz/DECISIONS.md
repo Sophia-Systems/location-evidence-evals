@@ -459,3 +459,62 @@ following those.
     fit math is a pure exported function (computeViewFit) so the node
     suite verifies all five presets at 1600x1000: staging framed with
     >=10% margin, boundary entirely off-screen.
+
+## v3: simplification pass (adjudicated by John)
+
+43. **Two scenarios, less chrome, evidence made visible.** John reviewed the
+    five-preset build and directed a simplification: the demo teaches best
+    with just **Baseline** (erasure: belief concentrates by exclusion) and
+    **Evasive attester** (padding cannot fake presence; reveal-truth defaults
+    on and the true location joins the default frame). Removed from the UI --
+    engine capabilities and tests retained -- were the geometry / trust /
+    allowance presets, the anchor fabrication toggle, the assessment-interval
+    panel (the interval is now always all receipts), the bundle-mode switch
+    (rtt-min only), and the "evaluate here" control. The per-anchor `pi` is
+    surfaced as **collusion risk** (the chance the anchor colludes with the
+    attester), which resolves the apparent inversion of the identity presets:
+    an ally of the attester's operator carries HIGH risk (0.30), an adversary
+    the LOWEST (0.03) -- the most credible witness -- now stated in a hint
+    under the preset chips. Added: an orienting blurb (the map is the
+    probability distribution over the machine's location, updated as receipts
+    arrive; links johnx.co/research -- a nav-only href whitelisted in
+    build.mjs), a five-step "how to use" list, an evidence log under the
+    scenario card (one row per signed receipt, expanding to a simplified
+    plugin-rtt-anchor-style record with pseudo keys/signatures), the
+    assumptions line relocated into the scenario card, every info tip cut to
+    one or two sentences, overlay opacity defaulting to 100%, and the
+    declared star replaced by an ink-ringed translucent circle the truth
+    graticule overlays cleanly when declared = true.
+
+44. **Second review round (adjudicated by John).** The scenario card leads
+    with policy motivation (AI-chip location verification as a check on
+    declared use and proliferation risk) in John's own copy, then mechanism
+    (anchor nodes probe attester nodes with governed GPUs; signed challenges;
+    lightspeed bounds), then what the demo shows (evidence updating the
+    spatial probability distribution) with the research link; the subtitle
+    line is gone. "How to use" is now "Instructions". The simulator panel is
+    removed outright -- free-play world-truth knobs (attack mode, true
+    delta_att, path noise) confused more than they taught; the scenario
+    defines the world, and a new read-only **Attester** card on the left
+    (declared location, behavior, true location hidden behind "Reveal true
+    location") organizes the story: attester and evidence left, anchors
+    right. The collusion-risk tip is one line ("Higher risk means this
+    anchor's evidence carries less weight"). Natural-language UI copy is
+    sentence-cased throughout (parameter/variable names stay as symbols).
+    Evidence rows no longer shrink when several are expanded (flex: none;
+    receipt fields wrap). Credits added to "About this model".
+
+45. **Third review round (adjudicated by John).** Title is "Verifying
+    compute location" (page <title> too). Blurb: attester nodes "operating
+    sensitive GPUs"; the research link reads as a link (weight + tasteful
+    underline). The attester block moved inside the scenario card under a
+    "Scenario" header (chips + Reset + attester rows); behavior wording is
+    simply "Evasive -- manipulates responses". The preset caption and the
+    assumptions line (compliant attester / allowance / uniform prior) are
+    gone -- jargon without a reader. Credits link John Hoopes ->
+    johnx.co/research and CAISH Hardware Assurance Programme ->
+    caish.org/hardware (both whitelisted as nav-only hrefs). The map
+    tooltip sizes to its content (width: max-content) so the risk/cap line
+    no longer spills past the box, and default framing now subtracts the
+    LEFT column's obstruction as well as the right's, so the staging
+    centers in the visible gap (frameWindow gained an obstructLeft).
