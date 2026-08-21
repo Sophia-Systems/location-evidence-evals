@@ -574,12 +574,15 @@ export function createRenderer(canvas) {
   // readable beneath it -- the evasive demo's peak sits within a few cells of
   // the declared spot, and an opaque marker would hide exactly the evidence
   // the demo exists to show. When declared == true, the truth crosshair's
-  // graticule overlays it cleanly (crosshair r > this r).
-  function drawDeclared(px, py, r, color) {
+  // graticule overlays it cleanly (crosshair r > this r). The mobile story
+  // opts into a solid fill instead (scene.declaredSolid): its guided camera
+  // keeps the peak visible around the marker, and the light interior read as
+  // a rendering mistake there.
+  function drawDeclared(px, py, r, color, solid) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(px, py, r, 0, Math.PI * 2);
-    ctx.globalAlpha = 0.25;
+    ctx.globalAlpha = solid ? 1 : 0.25;
     ctx.fillStyle = color;
     ctx.fill();
     ctx.globalAlpha = 0.9;
@@ -747,7 +750,7 @@ export function createRenderer(canvas) {
     // declared marker
     if (scene.declared) {
       const [px, py] = latLonToCss(scene.declared.lat, scene.declared.lon);
-      drawDeclared(px, py, 9, theme.accent);
+      drawDeclared(px, py, 9, theme.accent, !!scene.declaredSolid);
       if (scene.labels) tinyLabel(px, py + 18, "declared");
     }
 
@@ -930,6 +933,17 @@ export function createRenderer(canvas) {
     return best;
   }
 
+  // Raw view accessors, for callers that tween the camera themselves (the
+  // mobile story animates between frameWindow fits): read the view, restore
+  // it, interpolate zoom linearly (log-space scale) and the center in world
+  // units, calling setView per frame. setView clamps like every other path.
+  const getView = () => ({ wx: viewCenter.wx, wy: viewCenter.wy, zoom });
+  function setView(v) {
+    zoom = v.zoom;
+    viewCenter = { wx: v.wx, wy: v.wy };
+    clampView();
+  }
+
   return {
     resize,
     refreshTheme,
@@ -949,6 +963,8 @@ export function createRenderer(canvas) {
     setZoomAt,
     zoomBy,
     panBy,
+    getView,
+    setView,
     resetView: frameWindow,
     frameWindow,
     // tiles

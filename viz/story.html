@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verifying compute location</title>
+<title>Verifying compute location — step by step</title>
 <style>
-/* style.css -- the verifier's bench.
-   Quiet precision-instrument styling: warm paper in light, green-black in
-   dark, hairline rules, mono numerals, #006a4e accent. The base map stays
-   recessive so the color ramp carries the information. */
+/* story.css -- the mobile scroll story.
+   Same "verifier's bench" voice as style.css: warm paper in light,
+   green-black in dark, hairline rules, mono eyebrows, #006a4e accent.
+   The theme tokens below MIRROR style.css -- render.js reads them off
+   document.body at runtime, so the two pages stay in one palette. If a
+   token changes there, change it here. */
 
 :root {
   --font-ui: "Avenir Next", "Seravek", "Gill Sans", ui-sans-serif, system-ui,
@@ -32,6 +34,7 @@
   --map-coast: #ada793;
   --map-border: #c6c1af;
   --shadow: 0 1px 2px rgba(30, 33, 28, 0.06), 0 4px 16px rgba(30, 33, 28, 0.07);
+  --card-veil: rgba(253, 252, 248, 0.88);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,6 +55,7 @@
     --map-coast: #46514a;
     --map-border: #303a32;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+    --card-veil: rgba(23, 30, 25, 0.9);
   }
 }
 
@@ -63,1248 +67,284 @@
   display: none !important;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 html,
 body {
-  height: 100%;
   margin: 0;
 }
 
 body {
   font-family: var(--font-ui);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--ink);
   background: var(--surface);
   -webkit-font-smoothing: antialiased;
 }
 
-#app {
+/* ---- scrollytelling scaffold --------------------------------------------
+   One sticky full-viewport map behind a column of step sections. The map is
+   scenery: it takes no pointer input; the page just scrolls. */
+
+.story {
   position: relative;
+}
+
+.story-graphic {
+  position: sticky;
+  top: 0;
   height: 100vh;
-  min-width: 1080px;
-  overflow: hidden;
+  height: 100dvh;
+  z-index: 0;
 }
 
-/* ---------- full-bleed map + floating panels ---------- */
-/* The map canvas reaches all four viewport edges; every control lives in a
-   floating overlay card on top of it (item 1). */
-
-.map-pane {
-  position: absolute;
-  inset: 0;
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
-#map {
+.story-graphic canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
-  /* grab affordance on empty background hints that it pans (item 2);
-     more specific states below override it */
-  cursor: grab;
-  touch-action: none;
 }
 
-#map.placing {
-  cursor: crosshair;
-}
-
-#map.over-anchor {
-  cursor: pointer;
-}
-
-#map.dragging {
-  cursor: grabbing;
-}
-
-#map.panning {
-  cursor: grabbing;
-}
-
-/* floating card: shared elevation/material for every overlay panel */
-
-.card {
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-}
-
-/* left column: scenario card (the entry point) stacked over the evidence
-   log. The column owns the absolute placement; its cards stack inside it. */
-
-.left-col {
+.story-attribution {
   position: absolute;
-  left: 16px;
-  top: 16px;
-  bottom: 16px;
-  width: 380px;
-  max-width: calc(100vw - 32px);
+  right: 6px;
+  bottom: 4px;
+  font-size: 9px;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.story-steps {
+  position: relative;
+  z-index: 1;
+  margin-top: -100vh;
+  margin-top: -100dvh;
+  pointer-events: none; /* cards re-enable it */
+}
+
+.story-step {
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  z-index: 6;
-  pointer-events: none; /* the cards re-enable; gaps stay click-through */
-}
-
-.left-col > .card {
-  pointer-events: auto;
-}
-
-/* scenario card: given real weight (title, generous padding) so it reads
-   first against a busy map */
-
-.scenario-card {
-  flex: none;
-  padding: 14px 16px 12px;
-}
-
-.blurb {
-  font-size: 11.5px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-  margin: 8px 0 0;
-}
-
-/* scenario chips + reset, one row */
-
-.chips-row {
-  display: flex;
+  justify-content: flex-end;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 12px;
+  padding: 0 14px calc(20px + env(safe-area-inset-bottom, 0px));
 }
 
-.chips-row .preset-chips {
-  margin-top: 0;
+/* extra runway after each card so a step holds the stage while its map
+   settles, instead of the next card arriving immediately */
+.story-step + .story-step {
+  margin-top: 24vh;
 }
 
-.blurb b {
-  color: var(--ink);
+/* the title slide: card centered on the viewport; the map story begins as
+   the reader scrolls past it */
+.story-step.centered {
+  justify-content: center;
 }
 
-.blurb a,
-details.fold .fold-body a {
-  color: var(--accent);
+/* ---- cards --------------------------------------------------------------- */
+
+.story-card {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 480px;
+  background: var(--card-veil);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px 12px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out);
+}
+
+.story-step.active .story-card {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.story-card h1 {
+  font-size: 22px;
+  line-height: 1.25;
   font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.story-card h2 {
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 600;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.story-card p {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+
+.story-card p:last-child {
+  margin-bottom: 0;
+}
+
+.story-card strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.story-card .mark {
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.story-card p a {
+  color: var(--accent);
   text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2.5px;
-  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  transition: text-decoration-color 140ms var(--ease-out);
+  text-underline-offset: 2px;
 }
 
-.blurb a:hover,
-details.fold .fold-body a:hover {
-  text-decoration-color: var(--accent);
+.story-card .aside {
+  font-size: 12.5px;
+  color: var(--ink-faint);
 }
 
-.tutorial {
+/* quiet per-card step-through affordance */
+.story-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), background 160ms ease;
+}
+
+.story-next:active {
+  transform: scale(0.96);
+  background: var(--accent-soft);
+}
+
+/* ---- intro extras -------------------------------------------------------- */
+
+.scroll-cue {
+  display: block;
+  margin: 10px auto 0;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-faint);
+  animation: cue-bob 1.8s ease-in-out infinite;
+}
+
+@keyframes cue-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 0.95;
+  }
+}
+
+/* ---- closing links ------------------------------------------------------- */
+
+.story-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 10px;
 }
 
-.tutorial ol {
-  margin: 2px 0 2px;
-  padding-left: 18px;
-}
-
-.tutorial li {
-  margin: 2px 0;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-}
-
-/* Scenario section header inside the scenario card */
-
-.sec-head {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-}
-
-/* attester block: the machine under test, staged by the scenario */
-
-.att-block {
-  margin-top: 9px;
-}
-
-.att-sub {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  margin-bottom: 3px;
-}
-
-.att-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 2px 0;
-  font-size: 11.5px;
-}
-
-.att-lbl {
-  flex: none;
-  width: 82px;
-  font-weight: 600;
-  color: var(--ink-faint);
-}
-
-.att-val {
-  flex: 1;
-  color: var(--ink-soft);
-}
-
-.att-reveal {
-  margin-top: 7px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  display: flex;
-}
-
-/* evidence log: the accumulating set of signed receipts */
-
-.evidence-card {
-  flex: 0 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.evidence-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-
-.evidence-count {
-  font: 500 10px var(--font-mono);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.evidence-list {
-  overflow-y: auto;
-  min-height: 0;
-  padding: 8px 10px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.evidence-list:empty {
-  display: none;
-}
-
-details.receipt {
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  overflow: hidden;
-  /* the list is a flex column: without this, several expanded receipts
-     shrink to share the space and their bodies overflow their borders */
-  flex: none;
-}
-
-details.receipt summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 9px;
-  font: 500 10.5px var(--font-mono);
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-  transition: color 140ms var(--ease-out);
-}
-
-details.receipt summary::before {
-  content: "";
-  width: 4px;
-  height: 4px;
-  border-right: 1.5px solid var(--ink-faint);
-  border-bottom: 1.5px solid var(--ink-faint);
-  transform: rotate(-45deg);
-  transition: transform 160ms var(--ease-out);
-  flex: none;
-}
-
-details.receipt[open] summary::before {
-  transform: rotate(45deg);
-}
-
-details.receipt summary:hover {
-  color: var(--accent);
-}
-
-details.receipt .r-time {
-  color: var(--ink-faint);
-  flex: none;
-}
-
-details.receipt .r-name {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-details.receipt .r-rtt {
-  flex: none;
-}
-
-details.receipt pre {
-  margin: 0;
-  padding: 4px 10px 8px 21px;
-  font: 500 10px var(--font-mono);
-  line-height: 1.5;
-  color: var(--ink-soft);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.brand h1 {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  margin: 0;
-  white-space: nowrap;
-}
-
-.brand h1 .mark {
-  color: var(--accent);
-}
-
-.preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-}
-
-.chip {
-  font: 500 12px var(--font-ui);
-  color: var(--ink-soft);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 12px;
-  cursor: pointer;
-  transition: background 150ms var(--ease-out), color 150ms var(--ease-out),
-    border-color 150ms var(--ease-out), transform 120ms var(--ease-out);
-  white-space: nowrap;
-}
-
-.chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.chip:active {
-  transform: scale(0.97);
-}
-
-.chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.preset-caption {
-  font-size: 11.5px;
-  color: var(--ink-faint);
-  margin-top: 8px;
-  /* captions wrap fully -- no clamp, no ellipsis. The card has the room;
-     caption LENGTH is governed at the source (engine.js PRESETS keeps each
-     to one crisp sentence plus a short trust note, ~3 lines here). */
-}
-
-details.fold .fold-body .credits {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 10.5px;
-  color: var(--ink-faint);
-}
-
-/* parameters column: floating right side, collapsible, scrolls within
-   itself -- capped short of the bottom-right corner so it never covers the
-   legend card */
-
-.params-card {
-  position: absolute;
-  right: 16px;
-  top: 16px;
-  width: 380px;
-  max-height: calc(100vh - 200px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 6;
-}
-
-.params-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.story-links a {
+  display: block;
+  text-align: center;
   padding: 10px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-
-.collapse-toggle {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--ink-soft);
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 160ms var(--ease-out), color 140ms var(--ease-out),
-    border-color 140ms var(--ease-out);
-}
-
-.collapse-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.params-scroll {
-  overflow-y: auto;
-  min-height: 0;
-  padding: 12px 14px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.params-card.collapsed {
-  max-height: none;
-}
-
-.params-card.collapsed .params-scroll {
-  display: none;
-}
-
-/* chevron points down while open, right while collapsed */
-.params-card.collapsed .collapse-toggle {
-  transform: rotate(-90deg);
-}
-
-/* map HUD: view-reset control stacked above the legend, bottom-right */
-
-.hud {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.hud .view-btn {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: var(--shadow);
-}
-
-.legend {
-  pointer-events: auto;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  backdrop-filter: blur(6px);
-  border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 8px 10px;
-  box-shadow: var(--shadow);
-  width: 210px;
-}
-
-.legend .bar {
-  height: 8px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-}
-
-.legend .ends {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font: 500 9.5px var(--font-mono);
-  color: var(--ink-faint);
-  margin-top: 4px;
-}
-
-.legend .title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  font-size: 11px;
+  text-decoration: none;
   font-weight: 600;
-  color: var(--ink-soft);
-}
-
-/* tile attribution: bottom edge, beneath the HUD stack */
-
-.map-attribution {
-  position: absolute;
-  right: 16px;
-  bottom: 1px;
-  font: 500 9px var(--font-mono);
-  color: var(--ink-faint);
-  opacity: 0.85;
-  pointer-events: none;
-  z-index: 4;
-}
-
-.map-attribution.hidden {
-  display: none;
-}
-
-/* map tooltip */
-
-#map-tip {
-  position: absolute;
-  width: max-content; /* shrink-to-fit near the pane edge must not squeeze the pre text out of the box */
-  max-width: 260px;
-  pointer-events: none;
-  background: var(--card);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  padding: 8px 10px;
-  font-size: 11.5px;
-  opacity: 0;
-  transform: translateY(4px) scale(0.98);
-  transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out);
-  max-width: 230px;
-  z-index: 8;
-}
-
-#map-tip.show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-
-#map-tip .tip-name {
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-
-#map-tip .tip-stats {
-  font: 500 10.5px var(--font-mono);
-  color: var(--ink-soft);
-  white-space: pre;
-}
-
-#map-tip .tip-hint {
-  margin-top: 4px;
-  font-size: 10px;
-  color: var(--ink-faint);
-}
-
-.panel {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 14px;
-}
-
-.panel > h2 {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--ink-faint);
-  margin: 0 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.panel h2 .h-actions {
-  display: flex;
-  gap: 6px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-/* buttons */
-
-button {
-  font-family: var(--font-ui);
-}
-
-.btn {
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink);
-  padding: 5px 12px;
-  cursor: pointer;
-  transition: background 150ms var(--ease-out), border-color 150ms var(--ease-out),
-    transform 120ms var(--ease-out), color 150ms var(--ease-out);
-}
-
-.btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.btn:active {
-  transform: scale(0.97);
-}
-
-.btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.btn.primary:hover {
-  filter: brightness(1.08);
-  color: var(--accent-ink);
-}
-
-.btn.small {
-  font-size: 11px;
-  padding: 3px 9px;
-}
-
-.btn.ghost {
-  border-color: transparent;
-  background: transparent;
-  color: var(--ink-soft);
-}
-
-.btn.ghost:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* segmented control */
-
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  overflow: hidden;
-}
-
-.seg button {
-  font-size: 11px;
-  font-weight: 600;
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: background 140ms var(--ease-out), color 140ms var(--ease-out);
-}
-
-.seg button + button {
-  border-left: 1px solid var(--line);
-}
-
-.seg button.active {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-/* switch */
-
-.switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  user-select: none;
-}
-
-.switch input {
-  appearance: none;
-  width: 30px;
-  height: 17px;
-  border-radius: 999px;
-  background: var(--line);
-  position: relative;
-  cursor: pointer;
-  transition: background 160ms var(--ease-out);
-  margin: 0;
-}
-
-.switch input::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--card);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  font-size: 14px;
   transition: transform 160ms var(--ease-out);
 }
 
-.switch input:checked {
-  background: var(--accent);
-}
-
-.switch input:checked::after {
-  transform: translateX(13px);
-}
-
-.switch.sim input:checked {
-  background: var(--warn);
-}
-
-/* rows, sliders, readouts */
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 7px 0;
-}
-
-.row .lbl {
-  flex: none;
-  width: 118px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--ink-soft);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.row .val {
-  flex: none;
-  min-width: 86px;
-  text-align: right;
-  font: 500 11px var(--font-mono);
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.row input[type="range"] {
-  flex: 1;
-  min-width: 0;
-  appearance: none;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line);
-  outline: none;
-  margin: 0;
-}
-
-.row input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  cursor: grab;
-  transition: transform 120ms var(--ease-out);
-}
-
-.row input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-
-.row input[type="range"]::-moz-range-thumb {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--card);
-  cursor: grab;
-}
-
-.fixed-val {
-  font: 500 11px var(--font-mono);
-  color: var(--ink-faint);
-}
-
-/* info affordance */
-
-.info {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--ink-faint);
-  background: transparent;
-  color: var(--ink-faint);
-  font: 600 9px/1 var(--font-mono);
-  cursor: help;
-  position: relative;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 140ms var(--ease-out), border-color 140ms var(--ease-out);
-}
-
-.info:hover,
-.info:focus-visible {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* The popover itself is a single JS-positioned element appended to <body>
-   (see ui.js): position: fixed with viewport clamping, so no scrolling or
-   overflow-hidden ancestor (.params-scroll, .map-pane, .legend's
-   backdrop-filter) can ever clip it. */
-
-#info-pop {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 264px;
-  max-width: calc(100vw - 24px);
-  background: var(--card);
-  color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-  padding: 9px 11px;
-  font: 400 11.5px/1.5 var(--font-ui);
-  text-align: left;
-  white-space: normal;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(3px) scale(0.98);
-  transition: opacity 150ms var(--ease-out), transform 150ms var(--ease-out);
-  z-index: 100;
-}
-
-#info-pop.show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-
-/* anchor cards */
-
-.anchor-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.anchor-card {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 9px 11px;
-  background: var(--surface);
-  transition: border-color 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
-}
-
-.anchor-card.hovered {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
-}
-
-.anchor-card header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.anchor-card .dot {
-  flex: none;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.anchor-card .name {
-  flex: 1;
-  font-weight: 600;
-  font-size: 12.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.anchor-card .stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px 12px;
-  margin: 7px 0 2px;
-  font: 500 10.5px var(--font-mono);
-  color: var(--ink-soft);
-  font-variant-numeric: tabular-nums;
-}
-
-.anchor-card .stats b {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.anchor-card .pi-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 7px;
-}
-
-.anchor-card .pi-row .pi-lbl {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.anchor-card .pi-row input[type="range"] {
-  flex: 1;
-  min-width: 0;
-  appearance: none;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--line);
-  margin: 0;
-}
-
-.anchor-card .pi-row input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--card);
-  cursor: grab;
-}
-
-.anchor-card .pi-row input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--card);
-}
-
-.anchor-card .pi-row .pi-val {
-  font: 600 11px var(--font-mono);
-  min-width: 32px;
-  text-align: right;
-}
-
-.anchor-card .id-presets {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.anchor-card .id-presets button {
-  font-size: 10px;
-  font-weight: 600;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-faint);
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: color 140ms var(--ease-out), border-color 140ms var(--ease-out),
-    background 140ms var(--ease-out);
-}
-
-.anchor-card .id-presets button:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.anchor-card .id-presets button.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.anchor-card .id-hint {
-  margin-top: 5px;
-  font-size: 10px;
-  line-height: 1.4;
-  color: var(--ink-faint);
-}
-
-.anchor-card .id-hint b {
-  color: var(--ink-soft);
-}
-
-.anchor-card .bits {
-  margin-top: 6px;
-  font-size: 10.5px;
-  color: var(--ink-faint);
-}
-
-.anchor-card .bits b {
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-}
-
-.anchor-card .warn-note {
-  margin-top: 6px;
-  font-size: 10.5px;
-  color: var(--warn);
-}
-
-/* add-anchor menu */
-
-.add-wrap {
-  position: relative;
-}
-
-.add-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  box-shadow: var(--shadow);
-  padding: 6px;
-  width: 220px;
-  z-index: 20;
-  display: none;
-}
-
-.add-menu.open {
-  display: block;
-}
-
-.add-menu button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font-size: 12px;
-  border: none;
-  background: transparent;
-  color: var(--ink);
-  border-radius: 6px;
-  padding: 5px 8px;
-  cursor: pointer;
-  transition: background 120ms var(--ease-out);
-}
-
-.add-menu button:hover:not(:disabled) {
-  background: var(--accent-soft);
-}
-
-.add-menu button:disabled {
-  color: var(--ink-faint);
-  cursor: default;
-}
-
-.add-menu .sep {
-  border-top: 1px solid var(--line);
-  margin: 5px 0;
-}
-
-/* ramp selector */
-
-.ramp-row {
-  display: flex;
-  gap: 6px;
-}
-
-.ramp-row button {
-  flex: 1;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--card);
-  padding: 5px 6px 4px;
-  cursor: pointer;
-  transition: border-color 140ms var(--ease-out), transform 120ms var(--ease-out);
-}
-
-.ramp-row button:active {
+.story-links a:active {
   transform: scale(0.97);
 }
 
-.ramp-row button.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.ramp-row .swatch {
-  height: 8px;
-  border-radius: 4px;
-  margin-bottom: 3px;
-}
-
-.ramp-row .rname {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--ink-soft);
-}
-
-/* about / details */
-
-details.fold {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0;
-  overflow: hidden;
-  background: var(--surface);
-}
-
-details.fold + details.fold {
-  margin-top: 8px;
-}
-
-details.fold summary {
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  padding: 8px 11px;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  transition: color 140ms var(--ease-out);
-}
-
-details.fold summary::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-right: 1.5px solid var(--ink-faint);
-  border-bottom: 1.5px solid var(--ink-faint);
-  transform: rotate(-45deg);
-  transition: transform 180ms var(--ease-out);
-  flex: none;
-}
-
-details.fold[open] summary::before {
-  transform: rotate(45deg);
-}
-
-details.fold summary:hover {
-  color: var(--accent);
-}
-
-details.fold .fold-body {
-  padding: 2px 12px 11px;
-  font-size: 11.5px;
-  color: var(--ink-soft);
-}
-
-details.fold .fold-body p {
-  margin: 6px 0;
-}
-
-details.fold .fold-body b {
-  color: var(--ink);
-}
-
-.probe-anatomy svg {
-  width: 100%;
-  height: auto;
-  margin-top: 4px;
-}
-
-.probe-anatomy .an-lbl {
-  font: 500 8.5px var(--font-mono);
-  fill: var(--ink-faint);
-}
-
-.probe-anatomy .an-seg {
-  stroke-width: 5;
-  stroke-linecap: round;
-}
-
-/* misc */
-
-.muted {
-  color: var(--ink-faint);
-}
-
-.hint {
-  font-size: 10.5px;
-  color: var(--ink-faint);
-  margin-top: 6px;
-}
-
-.placing-note {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
+.story-links .primary {
   background: var(--accent);
   color: var(--accent-ink);
-  font-size: 11.5px;
-  font-weight: 600;
-  border-radius: 999px;
-  padding: 5px 14px;
-  box-shadow: var(--shadow);
-  opacity: 0;
-  transition: opacity 160ms var(--ease-out);
-  pointer-events: none;
-  z-index: 7;
 }
 
-.placing-note.show {
-  opacity: 1;
+.story-links .secondary {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--card);
 }
+
+/* ---- progress rail ------------------------------------------------------- */
+
+.story-rail {
+  position: fixed;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.story-rail button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 200ms ease, transform 200ms var(--ease-out),
+    background 200ms ease;
+}
+
+.story-rail button.current {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.45);
+}
+
+/* ---- reduced motion ------------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {
-  * {
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
+  html {
+    scroll-behavior: auto;
+  }
+  .story-card {
+    transform: none;
+    transition: opacity 200ms ease;
+  }
+  .scroll-cue {
+    animation: none;
   }
 }
 
@@ -4833,234 +3873,261 @@ function createRenderer(canvas) {
   };
 }
 
-// ---- ui.js ----
+// ---- story.js ----
 
 
-const NOON = 12 * 3600 * 1000; // sim clock origin: 12:00:00 UTC, ms since midnight
-const ANIM_MS = 350;
+const FIELD_MS = 400; // posterior tween, matches the bench's feel
+const CAMERA_MS = 750;
 
-const INFO = {
-  vc:
-    "Exclusion radii are computed at lightspeed (v_c = 300 km/ms). Nothing physical outruns light, so a circle drawn at this speed is safe against any attester.",
-  vfiber:
-    "How fast signals actually travel in fiber: c/1.47 ≈ 204 km/ms. Used to simulate honest round trips and shape expectations inside a circle -- never for exclusion.",
-  allowance:
-    "Round-trip time the verifier writes off as processing before converting to distance (each 1 ms shrinks every radius by 150 km). Set it above the attester's true overhead and circles shrink below physics -- the assessment becomes wrong, not vague.",
-  interior:
-    "How quickly belief fades moving inward from a circle's edge. Kept deliberately slow: a receipt mostly says “not outside this circle”, and little about where inside it.",
-  collusion:
-    "The chance this anchor colludes with the attester. Higher risk means this anchor's evidence carries less weight.",
-  grid:
-    "The lattice holding the posterior over the region under evaluation (the dashed window). Display layout only -- every distance in the model is great-circle.",
-  floor:
-    "Color is log-scaled relative to the brightest cell; a dim haze means the evidence discriminates little. Outside a circle, brightness never drops to zero -- residual doubt (collusion, forged signatures, faults) is kept explicit, and its depth is set by anchor trust.",
+const STORY_LOC = {
+  cambridge: { lat: 52.205, lon: 0.119 },
+  tallinn: { lat: 59.437, lon: 24.754 },
+  stPetersburg: { lat: 59.934, lon: 30.335 },
+  helsinki: { lat: 60.404, lon: 25.106 },
+  falkenstein: { lat: 50.479, lon: 12.337 },
+  paris: { lat: 48.928, lon: 2.353 },
+  london: { lat: 51.512, lon: -0.003 },
+  hamina: { lat: 60.537, lon: 27.198 },
+  stockholm: { lat: 59.329, lon: 18.069 },
 };
 
-
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-const info = (key, extraClass = "") =>
-  `<button class="info ${extraClass}" data-tip="${esc(INFO[key])}" aria-label="explain" type="button">i</button>`;
-
-const fmtMsVal = (x, d = 3) => (x == null ? "—" : `${x.toFixed(d)} ms`);
-const fmtKm = (x) => (x == null ? "—" : `${Math.round(x).toLocaleString("en-US")} km`);
-function fmtClock(ms) {
-  const s = Math.floor(ms / 1000);
-  const hh = Math.floor(s / 3600) % 24;
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const p = (n) => String(n).padStart(2, "0");
-  return `${p(hh)}:${p(mm)}:${p(ss)}`;
-}
-
-function buildApp(root) {
-  const engine = createEngine({ seed: (Date.now() % 100000) + 1 });
-
-  const state = {
-    presetId: "baseline",
-    clockMs: NOON,
-    revealTruth: false,
-    ramp: "magma",
-    opacity: 1,
-    hoverId: null,
-    dragId: null,
-    dragMoved: false,
-    placing: false,
-    customSeq: 0,
-    lastReadouts: null,
-    minDist: new Map(), // anchor id -> min distance to any cell (impossible-receipt check)
-  };
+const BASE_STAGE = [
+  STORY_LOC.cambridge,
+  STORY_LOC.helsinki,
+  STORY_LOC.falkenstein,
+  STORY_LOC.paris,
+  STORY_LOC.london,
+];
+const EVASIVE_CLAIM = [
+  STORY_LOC.tallinn,
+  STORY_LOC.helsinki,
+  STORY_LOC.hamina,
+  STORY_LOC.stockholm,
+];
+const EVASIVE_TRUTH = [...EVASIVE_CLAIM, STORY_LOC.stPetersburg];
 
 
+const STEPS = [
+  {
+    id: "title",
+    label: "introduction",
+    centered: true,
+    frame: BASE_STAGE,
+    reveal: false,
+    stages: [
+      {
+        delay: 0,
+        fn: (e) => {
+          e.loadPreset("baseline");
+          e.setSeed(7);
+        },
+      },
+    ],
+    card: `
+      <h1><span class="mark">&#9673;</span> Verifying compute location</h1>
+      <p>Verifying the location of advanced AI chips is a way to detect
+      whether they&rsquo;re being used as declared, and reduce the
+      proliferation risk of dangerous models.</p>
+      <p>Latency-based location verification asks machines at known locations
+      &mdash; <strong>anchor nodes</strong> &mdash; to probe
+      <strong>attester nodes</strong> operating sensitive GPUs. Attesters
+      cryptographically sign challenges then respond; distance is inferred
+      from the round-trip time measured by anchors. Since these pings
+      can&rsquo;t exceed the speed of light, each receipt bounds where the
+      attester machine can be.</p>
+      <p>This page is a short walkthrough of how that evidence updates the
+      spatial probability distribution of where a device might be. It is part
+      of <a href="https://johnx.co/research">ongoing research</a> to advance
+      location verification so we can make better-informed policy decisions
+      to govern AI advancement.</p>
+      <svg class="scroll-cue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`,
+  },
+  {
+    id: "claim",
+    label: "the declaration",
+    frame: BASE_STAGE,
+    reveal: false,
+    stages: [],
+    card: `
+      <h2>An operator declares a device&rsquo;s location: Cambridge.</h2>
+      <p>The ringed marker is the declared location. The green dots are
+      <strong>anchors</strong>.</p>
+      <p>The colored overlay is a probability distribution over where the
+      device actually is.</p>`,
+  },
+  {
+    id: "receipt",
+    label: "one measurement",
+    frame: BASE_STAGE,
+    reveal: false,
+    stages: [{ delay: 250, fn: (e) => e.probe("hetzner-helsinki", 0) }],
+    card: `
+      <h2>One signed measurement</h2>
+      <p>The Helsinki anchor sends a probe and times the round trip; the
+      signed reply makes the timing a <strong>receipt</strong>. Signal
+      propagation speed is bounded, so a round-trip time bounds the
+      device&rsquo;s distance from the anchor: locations beyond that bound
+      are excluded.</p>`,
+  },
+  {
+    id: "geometry",
+    label: "several directions",
+    frame: BASE_STAGE,
+    reveal: false,
+    stages: [
+      { delay: 250, fn: (e) => e.probe("hetzner-falkenstein", 1) },
+      { delay: 900, fn: (e) => e.probe("equinix-paris", 2) },
+      { delay: 1550, fn: (e) => e.probe("equinix-london", 3) },
+    ],
+    card: `
+      <h2>Measurements from several directions</h2>
+      <p>Anchors in Falkenstein, Paris, and London probe the same device.
+      Each receipt excludes the region beyond its own bound, and the
+      intersection that remains is small: the distribution concentrates near
+      Cambridge.</p>`,
+  },
+  {
+    id: "false-claim",
+    label: "a false declaration",
+    frame: EVASIVE_CLAIM,
+    reveal: false,
+    stages: [
+      {
+        delay: 0,
+        fn: (e) => {
+          e.loadPreset("evasive");
+          e.setSeed(21);
+        },
+      },
+    ],
+    card: `
+      <h2>A false declaration</h2>
+      <p>Now a different scenario. This operator declares a device is in
+      <strong>Tallinn</strong>; the device is elsewhere.</p>`,
+  },
+  {
+    id: "false-evidence",
+    label: "the evidence",
+    frame: EVASIVE_TRUTH,
+    reveal: false,
+    stages: [
+      { delay: 400, fn: (e) => e.probeAll(0) },
+      { delay: 1100, fn: (e) => e.probeAll(1) },
+      { delay: 1800, fn: (e) => e.probeAll(2) },
+    ],
+    card: `
+      <h2>The anchors probe it</h2>
+      <p>The evaluation runs as before, and the distribution concentrates
+      away from the declared location.</p>`,
+  },
+  {
+    id: "result",
+    label: "the result",
+    frame: EVASIVE_TRUTH,
+    reveal: true,
+    stages: [],
+    card: `
+      <h2>The declaration is improbable</h2>
+      <p>The device is actually in <strong>St Petersburg</strong>. In this
+      simulation, the assessment places most of the probability mass near the
+      actual location and comparatively little at the declared one.</p>
+      <p>That does not disprove the declaration &mdash; it makes it
+      improbable, which is grounds to flag it for scrutiny.</p>
+      <p class="aside">This page is a simplified, illustrative simulation.
+      The desktop version of this demo has more features and exposes the
+      model&rsquo;s parameters and assumptions.</p>
+      <div class="story-links">
+        <a class="primary" href="https://johnx.co/research">About this research</a>
+        <a class="secondary" href="./index.html?full">Open the desktop version</a>
+      </div>`,
+  },
+];
+
+
+function buildStory(root) {
   root.innerHTML = `
-  <div id="app">
-    <div class="map-pane">
-      <canvas id="map"></canvas>
-
-      <!-- left column: scenario card (the entry point) + evidence log -->
-      <div class="left-col">
-      <section class="card scenario-card">
-        <div class="brand">
-          <h1><span class="mark">◉</span> Verifying compute location</h1>
-        </div>
-        <p class="blurb">Verifying the location of advanced AI chips is a way to
-          detect whether they're being used as declared, and reduce the
-          proliferation risk of dangerous models.</p>
-        <p class="blurb">Latency-based location verification asks machines at
-          known locations -- <b>anchor nodes</b> -- to probe <b>attester nodes</b>
-          operating sensitive GPUs. Attesters cryptographically sign challenges
-          then respond; distance is inferred from the round-trip time measured
-          by anchors. Since these pings can't exceed the speed of light, each
-          receipt bounds where the attester machine can be.</p>
-        <p class="blurb">This demo visualizes how new evidence updates the
-          <b>spatial probability distribution</b> of where an attester might be.
-          It is part of <a href="https://johnx.co/research" target="_blank" rel="noopener">ongoing research</a>
-          to advance location verification technology so we can make
-          better-informed policy decisions to govern AI advancement.</p>
-        <details class="fold tutorial" id="tutorial-fold" open>
-          <summary>Instructions</summary>
-          <div class="fold-body">
-            <ol>
-              <li>Select a scenario below.</li>
-              <li>Click “Probe” on an anchor to collect a signed receipt.</li>
-              <li>Watch the spatial probability distribution update on the map.</li>
-              <li>Drag anchors to move them, or add new ones.</li>
-              <li>Adjust parameters -- e.g. an anchor's collusion risk.</li>
-            </ol>
-          </div>
-        </details>
-        <div class="sec-head">Scenario</div>
-        <div class="chips-row">
-          <div class="preset-chips" id="preset-chips"></div>
-          <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
-        </div>
-        <div class="att-block">
-          <div class="att-sub">Attester</div>
-          <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
-          <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
-          <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
-          <label class="switch att-reveal"><input type="checkbox" id="reveal-truth"><span>Reveal true location</span></label>
-        </div>
-      </section>
-
-      <!-- evidence log: the accumulating set of signed receipts -->
-      <section class="card evidence-card">
-        <div class="evidence-head"><span>Evidence</span><span class="evidence-count" id="evidence-count">No receipts yet</span></div>
-        <div class="evidence-list" id="evidence-list"></div>
-      </section>
-      </div>
-
-      <!-- parameters column: floating right side, collapsible, scrolls within itself -->
-      <aside class="card params-card" id="params-card">
-        <div class="params-head">
-          <span>parameters</span>
-          <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">▾</button>
-        </div>
-        <div class="params-scroll" id="params-scroll">
-        <section class="panel">
-          <h2>Anchors
-            <span class="h-actions">
-              <button class="btn small" id="probe-all">Probe all</button>
-              <span class="add-wrap">
-                <button class="btn small primary" id="add-anchor">+ Add</button>
-                <div class="add-menu" id="add-menu"></div>
-              </span>
-            </span>
-          </h2>
-          <div class="anchor-list" id="anchor-list"></div>
-          <div class="hint">Click an anchor on the map to probe it · drag to move (moving clears its receipts)</div>
-        </section>
-
-        <section class="panel">
-          <h2>Verifier parameters</h2>
-          <div class="row"><span class="lbl">Allowance ${info("allowance")}</span>
-            <input type="range" id="allowance" min="0" max="0.5" step="0.005" value="0">
-            <span class="val" id="allowance-val"></span></div>
-          <div class="row"><span class="lbl">Interior fade μ ${info("interior")}</span>
-            <input type="range" id="interior" min="0.2" max="5" step="0.1" value="1.2">
-            <span class="val" id="interior-val"></span></div>
-          <div class="row"><span class="lbl">v_c ${info("vc")}</span>
-            <span class="fixed-val">300 km/ms · fixed (security bound)</span></div>
-          <div class="row"><span class="lbl">v_fiber ${info("vfiber")}</span>
-            <span class="fixed-val">204 km/ms · fixed (c/n, n = 1.47)</span></div>
-        </section>
-
-        <section class="panel">
-          <h2>Display</h2>
-          <div class="row"><span class="lbl">Grid ${info("grid")}</span>
-            <span class="seg" id="grid-seg"><button data-v="square">square</button><button data-v="hex">hex</button></span>
-            <span class="val" id="grid-val"></span></div>
-          <div class="row"><span class="lbl">Resolution</span>
-            <input type="range" id="grid-res" min="80" max="220" step="20" value="180">
-            <span class="val" id="grid-res-val"></span></div>
-          <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">Color ramp</span>
-            <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
-          <div class="row"><span class="lbl">Overlay opacity</span>
-            <input type="range" id="opacity" min="10" max="100" step="5" value="100">
-            <span class="val" id="opacity-val"></span></div>
-        </section>
-
-        <section class="panel">
-          <h2>About</h2>
-          <details class="fold" id="about-fold">
-            <summary>About this model</summary>
-            <div class="fold-body">
-              <p>The posterior lives on the dashed ~3,600 km window -- the region under evaluation. Every distance is great-circle; country borders are drawn only to orient you.</p>
-              <p>Everything here locates <i>the machine holding the attester's signing key</i>; binding that key to particular hardware is a separate, unsolved problem, and forged signatures would void every bound on this page.</p>
-              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Seth Docherty, Gaurav Yadav, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, Jack Cheng, and Nikita Kezins for feedback and discussion.</p>
-            </div>
-          </details>
-          <details class="fold probe-anatomy" id="anatomy-fold">
-            <summary>Anatomy of a probe</summary>
-            <div class="fold-body">
-              <p>One measurement is a four-packet exchange, timed on the <b>anchor's clock alone</b> -- no synchronization. The anchor signs the interval it measured; the attester relays the receipt but cannot alter it.</p>
-              <svg viewBox="0 0 260 74" aria-label="round-trip delay budget">
-                <line x1="10" y1="30" x2="250" y2="30" stroke="var(--line)" stroke-width="1"/>
-                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="var(--accent)"/>
-                <line class="an-seg" x1="100" y1="30" x2="128" y2="30" stroke="var(--warn)"/>
-                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="var(--accent)"/>
-                <line class="an-seg" x1="220" y1="30" x2="248" y2="30" stroke="var(--ink-faint)"/>
-                <text class="an-lbl" x="14" y="16">path out</text>
-                <text class="an-lbl" x="88" y="52">δ_att: wake, parse, sign</text>
-                <text class="an-lbl" x="140" y="16">path back</text>
-                <text class="an-lbl" x="212" y="52">queueing</text>
-              </svg>
-              <p>Every term besides propagation is <b>one-sided</b> -- it only adds time. So the minimum over many probes converges on true propagation from above, and honest noise fails safe: it loosens circles, never wrongly excludes the truth.</p>
-            </div>
-          </details>
-        </section>
-        </div>
-      </aside>
-
-      <div class="placing-note" id="placing-note">Click the map to place the anchor · Esc to cancel</div>
-
-      <div class="hud">
-        <button class="btn small view-btn" id="reset-view-btn" type="button" title="Frame the region under evaluation">⤢ Reset view</button>
-        <div class="legend">
-          <div class="title-row"><span>Posterior probability</span>${info("floor")}</div>
-          <div class="bar" id="legend-bar"></div>
-          <div class="ends"><span>Floor</span><span>log scale · dim = haze</span><span>Peak</span></div>
-        </div>
-      </div>
-
-      <div class="map-attribution" id="map-attribution">© OpenStreetMap contributors © CARTO</div>
-      <div id="map-tip"></div>
+  <div class="story">
+    <div class="story-graphic">
+      <canvas id="story-map"></canvas>
+      <div class="story-attribution">&copy; OpenStreetMap contributors &copy; CARTO</div>
     </div>
+    <div class="story-steps">
+      ${STEPS.map(
+        (s, i) => `
+      <section class="story-step${s.centered ? " centered" : ""}" data-step="${i}">
+        <div class="story-card">
+          ${s.card}
+          ${
+            i < STEPS.length - 1
+              ? `<button class="story-next" data-next="${i + 1}">next &darr;</button>`
+              : ""
+          }
+        </div>
+      </section>`
+      ).join("")}
+    </div>
+    <nav class="story-rail" aria-label="story progress">
+      ${STEPS.map(
+        (s, i) =>
+          `<button data-goto="${i}" aria-label="step ${i + 1}: ${s.label}"></button>`
+      ).join("")}
+    </nav>
   </div>`;
 
-  const $ = (sel) => root.querySelector(sel);
-  const canvas = $("#map");
-  const attributionEl = $("#map-attribution");
+  const canvas = root.querySelector("#story-map");
+  const attributionEl = root.querySelector(".story-attribution");
+  const sections = [...root.querySelectorAll(".story-step")];
+  const railDots = [...root.querySelectorAll(".story-rail button")];
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  const engine = createEngine({ seed: 7 });
   const renderer = createRenderer(canvas);
   renderer.setGrid(engine.getGrid());
   renderer.setRedrawCallback(() => drawScene());
+  renderer.setOpacity(1);
 
 
-  let displayT = null; // Float32Array, display-space [0,1] per cell
+  let currentStep = 0;
+
+  function sceneData() {
+    const sim = engine.getSimulator();
+    const ro = engine.getReadouts();
+    const pos = new Map(engine.getAnchors().map((a) => [a.id, a]));
+    return {
+      anchors: ro.perAnchor.map((ra) => {
+        const p = pos.get(ra.id);
+        return {
+          id: ra.id,
+          name: ra.name,
+          lat: p.lat,
+          lon: p.lon,
+          circleKm: ra.exclusionRadiusKm,
+          dishonest: false,
+          hovered: false,
+          dragging: false,
+        };
+      }),
+      declared: sim.declared,
+      declaredSolid: true,
+      truth: STEPS[currentStep].reveal ? sim.trueLocation : null,
+      labels: true,
+    };
+  }
+
+  function drawScene() {
+    renderer.draw(sceneData());
+    attributionEl.classList.toggle("hidden", renderer.isOffline());
+  }
+
+
+  let displayT = null;
   let animFrom = null;
   let animTarget = null;
   let animT0 = 0;
   let animating = false;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
   function buildTargetT(post) {
     const n = post.length;
@@ -5072,7 +4139,7 @@ function buildApp(root) {
       if (post[i] < pmin) pmin = post[i];
     }
     if (!(pmax > 0) || pmax / Math.max(pmin, 1e-300) < 1.05) {
-      t.fill(0.22);
+      t.fill(0.32);
       return t;
     }
     const decades = Math.log10(pmax / Math.max(pmin, pmax * 1e-6));
@@ -5095,32 +4162,29 @@ function buildApp(root) {
   }
 
   const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+  const easeInOutCubic = (x) =>
+    x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
   function presentField(target, animate) {
-    if (
-      !animate ||
-      reducedMotion.matches ||
-      !displayT ||
-      displayT.length !== target.length
-    ) {
+    if (!animate || reducedMotion.matches || !displayT || displayT.length !== target.length) {
       displayT = Float32Array.from(target);
       renderer.updateHeat(displayT);
       drawScene();
       animating = false;
       return;
     }
-    animFrom = Float32Array.from(displayT); // retarget from what is on screen
+    animFrom = Float32Array.from(displayT);
     animTarget = Float32Array.from(target);
     animT0 = performance.now();
     if (!animating) {
       animating = true;
-      requestAnimationFrame(tick);
+      requestAnimationFrame(fieldTick);
     }
   }
 
-  function tick(now) {
+  function fieldTick(now) {
     if (!animating) return;
-    const u = Math.min(1, (now - animT0) / ANIM_MS);
+    const u = Math.min(1, (now - animT0) / FIELD_MS);
     const e = easeOutCubic(u);
     const n = animTarget.length;
     for (let i = 0; i < n; i++) {
@@ -5132,826 +4196,215 @@ function buildApp(root) {
       animating = false;
       return;
     }
-    requestAnimationFrame(tick);
+    requestAnimationFrame(fieldTick);
   }
 
-
-  function computeMinDist(id) {
-    const dist = engine.getAnchorDistField(id);
-    let m = Infinity;
-    for (let i = 0; i < dist.length; i++) if (dist[i] < m) m = dist[i];
-    state.minDist.set(id, m);
-  }
-
-  function sceneData() {
-    const sim = engine.getSimulator();
-    const ro = state.lastReadouts ?? engine.getReadouts();
-    const pos = new Map(engine.getAnchors().map((a) => [a.id, a]));
-    return {
-      anchors: ro.perAnchor.map((ra) => {
-        const p = pos.get(ra.id);
-        return {
-          id: ra.id,
-          name: ra.name,
-          lat: p.lat,
-          lon: p.lon,
-          circleKm: ra.exclusionRadiusKm,
-          dishonest: engine.isAnchorDishonest(ra.id),
-          hovered: state.hoverId === ra.id,
-          dragging: state.dragId === ra.id,
-        };
-      }),
-      declared: sim.declared,
-      truth: state.revealTruth ? sim.trueLocation : null,
-      labels: true,
-    };
-  }
-
-  function drawScene() {
-    renderer.draw(sceneData());
-    attributionEl.classList.toggle("hidden", renderer.isOffline());
-  }
+  let windowKey = "";
 
   function refresh({ animate = true } = {}) {
-    const post = engine.computePosterior();
-    state.lastReadouts = engine.getReadouts();
-    presentField(buildTargetT(post), animate);
-    updateAnchorCards();
-    updateGlobalReadouts();
-  }
-
-
-  function updateGlobalReadouts() {
-    updateEvidenceLog();
-  }
-
-
-  function advanceClock() {
-    state.clockMs += 7000 + Math.floor(Math.random() * 6000);
-  }
-
-  function doProbe(anchorId) {
-    engine.probe(anchorId, state.clockMs);
-    advanceClock();
-    refresh({ animate: true });
-  }
-
-  $("#probe-all").addEventListener("click", () => {
-    engine.probeAll(state.clockMs);
-    advanceClock();
-    refresh({ animate: true });
-  });
-
-
-  const evidenceOpen = new Set(); // keys of user-expanded rows
-  let evidenceFingerprint = ""; // last-rendered receipt set; skip no-op rebuilds
-
-  function fakeHex(str, len) {
-    let h = 0x811c9dc5;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 0x01000193) >>> 0;
+    const wc = engine.getWindowCenter();
+    const key = `${wc.lat.toFixed(4)},${wc.lon.toFixed(4)}`;
+    if (key !== windowKey) {
+      windowKey = key;
+      renderer.setWindow(wc);
+      displayT = null; // snap across hypothesis spaces
     }
-    let out = "";
-    while (out.length < len) {
-      h = Math.imul(h ^ (h >>> 13), 0x5bd1e995) >>> 0;
-      out += h.toString(16).padStart(8, "0");
-    }
-    return out.slice(0, len);
-  }
-
-  const receiptKey = (r) => `${r.anchorId}@${r.timestampMs}@${r.rtt}`;
-
-  function receiptDetail(r, a) {
-    return [
-      `{`,
-      `  anchor:       "${a.id}"`,
-      `  anchor_pos:   [${a.lat.toFixed(3)}, ${a.lon.toFixed(3)}]`,
-      `  observed_at:  ${fmtClock(r.timestampMs)} UTC`,
-      `  measured_rtt: ${r.rtt.toFixed(3)} ms`,
-      `  challenged:   true`,
-      `  pubkey:       ed25519:${fakeHex(a.id, 8)}…`,
-      `  signature:    ed25519:${fakeHex(receiptKey(r), 8)}…`,
-      `}`,
-    ].join("\n");
-  }
-
-  function updateEvidenceLog() {
-    const rows = [];
-    for (const a of engine.getAnchors()) {
-      for (const r of engine.getAnchorReceipts(a.id)) rows.push({ r, a });
-    }
-    rows.sort((x, y) => y.r.timestampMs - x.r.timestampMs);
-    $("#evidence-count").textContent =
-      rows.length === 0
-        ? "No receipts yet — probe an anchor"
-        : `${rows.length} signed receipt${rows.length === 1 ? "" : "s"}`;
-    const fingerprint = rows.map(({ r }) => receiptKey(r)).join("|");
-    if (fingerprint === evidenceFingerprint) return;
-    evidenceFingerprint = fingerprint;
-    const live = new Set(rows.map(({ r }) => receiptKey(r)));
-    for (const k of evidenceOpen) if (!live.has(k)) evidenceOpen.delete(k);
-    $("#evidence-list").innerHTML = rows
-      .map(({ r, a }) => {
-        const key = receiptKey(r);
-        return `<details class="receipt" data-key="${esc(key)}"${evidenceOpen.has(key) ? " open" : ""}>
-          <summary><span class="r-time">${fmtClock(r.timestampMs)}</span><span class="r-name">${esc(a.name)}</span><span class="r-rtt">${r.rtt.toFixed(3)} ms</span></summary>
-          <pre>${esc(receiptDetail(r, a))}</pre>
-        </details>`;
-      })
-      .join("");
-  }
-
-  $("#evidence-list").addEventListener("toggle", (e) => {
-    const d = e.target;
-    if (!(d instanceof HTMLElement) || !d.dataset.key) return;
-    if (d.open) evidenceOpen.add(d.dataset.key);
-    else evidenceOpen.delete(d.dataset.key);
-  }, true);
-
-
-  const cardRefs = new Map(); // id -> {el, stats, piSlider, piVal, bits, presetBtns, warnNote}
-
-  function rebuildAnchorCards() {
-    const list = $("#anchor-list");
-    list.innerHTML = "";
-    cardRefs.clear();
-    for (const a of engine.getAnchors()) {
-      if (!state.minDist.has(a.id)) computeMinDist(a.id);
-      const el = document.createElement("div");
-      el.className = "anchor-card";
-      el.dataset.id = a.id;
-      el.innerHTML = `
-        <header>
-          <span class="dot"></span>
-          <span class="name">${esc(a.name)}</span>
-          <button class="btn small primary probe-one" type="button">Probe</button>
-          <button class="btn small ghost remove-one" title="remove anchor" type="button">×</button>
-        </header>
-        <div class="stats">
-          <span>latest RTT <b class="s-latest">—</b></span>
-          <span>rtt_min <b class="s-min">—</b></span>
-          <span>exclusion r <b class="s-radius">—</b></span>
-          <span>receipts in T <b class="s-count">0</b></span>
-        </div>
-        <div class="pi-row">
-          <span class="pi-lbl">collusion risk ${info("collusion")}</span>
-          <input type="range" min="0.01" max="0.5" step="0.01" value="${a.pi}">
-          <span class="pi-val">${a.pi.toFixed(2)}</span>
-        </div>
-        <div class="id-presets">
-          <button data-pi="0.03" type="button">adversary 0.03</button>
-          <button data-pi="0.10" type="button">neutral 0.10</button>
-          <button data-pi="0.30" type="button">ally 0.30</button>
-        </div>
-        <div class="id-hint">An <b>adversary</b> of the attester's operator is least likely to cover for it — the most credible witness</div>
-        <div class="bits">This anchor's influence caps at log2(1/risk) = <b class="s-bits"></b> bits</div>
-        <div class="warn-note" hidden></div>`;
-      list.appendChild(el);
-
-      const refs = {
-        el,
-        latest: el.querySelector(".s-latest"),
-        min: el.querySelector(".s-min"),
-        radius: el.querySelector(".s-radius"),
-        count: el.querySelector(".s-count"),
-        piSlider: el.querySelector('input[type="range"]'),
-        piVal: el.querySelector(".pi-val"),
-        bits: el.querySelector(".s-bits"),
-        presetBtns: [...el.querySelectorAll(".id-presets button")],
-        warnNote: el.querySelector(".warn-note"),
-      };
-      cardRefs.set(a.id, refs);
-
-      el.querySelector(".probe-one").addEventListener("click", () => doProbe(a.id));
-      el.querySelector(".remove-one").addEventListener("click", () => {
-        engine.removeAnchor(a.id);
-        state.minDist.delete(a.id);
-        if (state.hoverId === a.id) state.hoverId = null;
-        rebuildAnchorCards();
-        refresh({ animate: true });
-        refreshAddMenu();
-      });
-      refs.piSlider.addEventListener("input", () => {
-        engine.setAnchorPi(a.id, Number(refs.piSlider.value));
-        refresh({ animate: false });
-      });
-      for (const b of refs.presetBtns) {
-        b.addEventListener("click", () => {
-          const v = Number(b.dataset.pi);
-          engine.setAnchorPi(a.id, v);
-          refs.piSlider.value = v;
-          refresh({ animate: true });
-        });
-      }
-      el.addEventListener("mouseenter", () => setHover(a.id));
-      el.addEventListener("mouseleave", () => setHover(null));
-    }
-    updateAnchorCards();
-    refreshAddMenu();
-  }
-
-  function updateAnchorCards() {
-    const ro = state.lastReadouts ?? engine.getReadouts();
-    for (const ra of ro.perAnchor) {
-      const r = cardRefs.get(ra.id);
-      if (!r) continue;
-      r.latest.textContent = fmtMsVal(ra.latestRtt);
-      r.min.textContent = fmtMsVal(ra.rttMin);
-      r.radius.textContent = fmtKm(ra.exclusionRadiusKm);
-      r.count.textContent = ra.receiptsInInterval;
-      r.bits.textContent = ra.bitsCeiling.toFixed(1);
-      if (Math.abs(Number(r.piSlider.value) - ra.pi) > 1e-9) r.piSlider.value = ra.pi;
-      r.piVal.textContent = ra.pi.toFixed(2);
-      for (const b of r.presetBtns) {
-        b.classList.toggle("active", Math.abs(Number(b.dataset.pi) - ra.pi) < 1e-9);
-      }
-      r.el.classList.toggle("hovered", state.hoverId === ra.id);
-      const minD = state.minDist.get(ra.id) ?? 0;
-      const impossible =
-        ra.rttMin != null &&
-        ra.exclusionRadiusKm != null &&
-        ra.exclusionRadiusKm < minD - engine.getGrid().cellRadKm;
-      r.warnNote.hidden = !impossible;
-      if (impossible) {
-        r.warnNote.textContent =
-          "Impossible receipt: the exclusion radius excludes every cell in the domain — this bundle contributes nothing (a physical impossibility under the honest model).";
-      }
-    }
+    presentField(buildTargetT(engine.computePosterior()), animate);
   }
 
 
-  function refreshAddMenu() {
-    const menu = $("#add-menu");
-    const have = new Set(engine.getAnchors().map((a) => a.id));
-    menu.innerHTML =
-      FACILITIES.map(
-        (f) =>
-          `<button data-fid="${f.id}" ${have.has(f.id) ? "disabled" : ""} type="button">${esc(f.name)}</button>`
-      ).join("") +
-      `<div class="sep"></div><button data-place="1" type="button">Click on the map…</button>`;
-    for (const b of menu.querySelectorAll("button[data-fid]")) {
-      b.addEventListener("click", () => {
-        engine.addAnchor({ facility: b.dataset.fid });
-        computeMinDist(b.dataset.fid);
-        closeAddMenu();
-        rebuildAnchorCards();
-        refresh({ animate: true });
-      });
+  let camAnimating = false;
+  let camFrom = null;
+  let camTo = null;
+  let camT0 = 0;
+
+  function frameTargetView(points, stepIndex) {
+    renderer.resize();
+    const rect = canvas.getBoundingClientRect();
+    const wCss = rect.width;
+    const hCss = rect.height;
+    if (!(wCss > 0) || !(hCss > 0)) return renderer.getView();
+    const card = sections[stepIndex]?.querySelector(".story-card");
+    const obstruct =
+      card && !STEPS[stepIndex].centered ? card.offsetHeight + 40 : 0;
+    const effH = Math.max(hCss - obstruct, hCss * 0.4);
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of points) {
+      const wx = lonToWorldX(p.lon);
+      const wy = latToWorldY(p.lat);
+      if (wx < x0) x0 = wx;
+      if (wy < y0) y0 = wy;
+      if (wx > x1) x1 = wx;
+      if (wy > y1) y1 = wy;
     }
-    menu.querySelector("button[data-place]").addEventListener("click", () => {
-      closeAddMenu();
-      setPlacing(true);
+    const MARGIN = 0.14; // per side, fraction of the framed region
+    const bw = Math.max(x1 - x0, 1e-9);
+    const bh = Math.max(y1 - y0, 1e-9);
+    const scale =
+      STEPS[stepIndex].centered
+        ? Math.max(wCss / bw, effH / bh)
+        : Math.min((wCss * (1 - 2 * MARGIN)) / bw, (effH * (1 - 2 * MARGIN)) / bh);
+    const zoom = Math.log2(scale);
+    const s = Math.pow(2, zoom);
+    const saved = renderer.getView();
+    renderer.setView({
+      wx: (x0 + x1) / 2,
+      wy: (y0 + y1) / 2 + (hCss - effH) / (2 * s),
+      zoom,
     });
+    const target = renderer.getView();
+    renderer.setView(saved);
+    return target;
   }
 
-  const closeAddMenu = () => $("#add-menu").classList.remove("open");
-  $("#add-anchor").addEventListener("click", (e) => {
-    e.stopPropagation();
-    $("#add-menu").classList.toggle("open");
-  });
-  document.addEventListener("click", (e) => {
-    if (!$("#add-menu").contains(e.target)) closeAddMenu();
-  });
-
-  function setPlacing(on) {
-    state.placing = on;
-    canvas.classList.toggle("placing", on);
-    $("#placing-note").classList.toggle("show", on);
-  }
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") setPlacing(false);
-  });
-
-
-  const infoPop = document.createElement("div");
-  infoPop.id = "info-pop";
-  infoPop.setAttribute("role", "tooltip");
-  document.body.appendChild(infoPop);
-  let infoBtn = null; // the .info button the popover is showing for
-  let infoPinned = false; // opened by click/tap: survives pointer-out; closed by click/Escape/outside
-
-  function positionInfoPop(btn) {
-    const M = 8; // px viewport margin
-    const r = btn.getBoundingClientRect();
-    const vw = document.documentElement.clientWidth;
-    const vh = document.documentElement.clientHeight;
-    const pw = infoPop.offsetWidth;
-    const ph = infoPop.offsetHeight;
-    let left = r.right + 10 - pw;
-    left = Math.max(M, Math.min(left, vw - pw - M));
-    let top = r.top - 8 - ph;
-    if (top < M) top = r.bottom + 8;
-    top = Math.max(M, Math.min(top, vh - ph - M));
-    infoPop.style.left = `${left}px`;
-    infoPop.style.top = `${top}px`;
-  }
-
-  function showInfoPop(btn) {
-    infoBtn = btn;
-    infoPop.textContent = btn.dataset.tip;
-    positionInfoPop(btn);
-    infoPop.classList.add("show");
-  }
-
-  function hideInfoPop() {
-    infoBtn = null;
-    infoPinned = false;
-    infoPop.classList.remove("show");
-  }
-
-  document.addEventListener("pointerover", (e) => {
-    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
-    if (btn) {
-      if (btn !== infoBtn) {
-        showInfoPop(btn);
-        infoPinned = false;
-      }
-    } else if (infoBtn && !infoPinned) hideInfoPop();
-  });
-  document.addEventListener("focusin", (e) => {
-    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
-    if (btn) {
-      if (btn !== infoBtn) {
-        showInfoPop(btn);
-        infoPinned = false;
-      }
-    } else if (infoBtn && !infoPinned) hideInfoPop();
-  });
-  document.addEventListener("click", (e) => {
-    const btn = e.target instanceof Element ? e.target.closest(".info") : null;
-    if (btn) {
-      if (infoBtn === btn && infoPinned) hideInfoPop();
-      else {
-        showInfoPop(btn);
-        infoPinned = true;
-      }
-    } else if (infoBtn) hideInfoPop();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && infoBtn) hideInfoPop();
-  });
-  document.addEventListener("scroll", () => hideInfoPop(), true);
-  window.addEventListener("resize", () => hideInfoPop());
-
-
-  const tip = $("#map-tip");
-
-  function setHover(id) {
-    if (state.hoverId === id) return;
-    state.hoverId = id;
-    canvas.classList.toggle("over-anchor", id != null && !state.placing);
-    for (const [aid, r] of cardRefs) r.el.classList.toggle("hovered", aid === id);
-    if (id == null) tip.classList.remove("show");
-    drawScene();
-  }
-
-  function showTip(clientX, clientY, id) {
-    const ro = state.lastReadouts ?? engine.getReadouts();
-    const ra = ro.perAnchor.find((a) => a.id === id);
-    if (!ra) return;
-    tip.innerHTML = `
-      <div class="tip-name">${esc(ra.name)}</div>
-      <div class="tip-stats">latest RTT  ${fmtMsVal(ra.latestRtt)}
-rtt_min     ${fmtMsVal(ra.rttMin)}
-exclusion r ${fmtKm(ra.exclusionRadiusKm)}
-risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
-      <div class="tip-hint">Click to probe · drag to move</div>`;
-    const pane = canvas.parentElement.getBoundingClientRect();
-    tip.style.left = `${clientX - pane.left + 14}px`;
-    tip.style.top = `${clientY - pane.top + 10}px`;
-    tip.classList.add("show");
-  }
-
-  function canvasPos(e) {
-    const r = canvas.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
-  }
-
-  let movePending = null;
-  let dragLastX = 0;
-  let dragLastY = 0;
-  let dragDownX = 0;
-  let dragDownY = 0;
-  const DRAG_THRESHOLD_PX = 4;
-
-  function cancelPendingDragMove() {
-    if (movePending != null) {
-      cancelAnimationFrame(movePending);
-      movePending = null;
-    }
-  }
-
-  function applyDragMove(animate) {
-    const ll = renderer.cssToLatLon(dragLastX, dragLastY);
-    engine.moveAnchor(state.dragId, ll.lat, ll.lon);
-    computeMinDist(state.dragId);
-    refresh({ animate });
-  }
-
-  let panning = false;
-  let panMoved = false;
-  let panDownX = 0;
-  let panDownY = 0;
-  let panLastX = 0;
-  let panLastY = 0;
-  let panDrawPending = null;
-
-  function cancelPendingPanDraw() {
-    if (panDrawPending != null) {
-      cancelAnimationFrame(panDrawPending);
-      panDrawPending = null;
-    }
-  }
-
-  canvas.addEventListener("pointerdown", (e) => {
-    if (state.placing) return;
-    const [px, py] = canvasPos(e);
-    const id = renderer.anchorAt(px, py, sceneData().anchors);
-    if (id) {
-      state.dragId = id;
-      state.dragMoved = false;
-      dragDownX = px;
-      dragDownY = py;
-      canvas.setPointerCapture(e.pointerId);
-      return;
-    }
-    panning = true;
-    panMoved = false;
-    panDownX = px;
-    panDownY = py;
-    panLastX = px;
-    panLastY = py;
-    canvas.setPointerCapture(e.pointerId);
-  });
-
-  canvas.addEventListener("pointermove", (e) => {
-    const [px, py] = canvasPos(e);
-    if (state.dragId) {
-      if (!state.dragMoved) {
-        if (Math.hypot(px - dragDownX, py - dragDownY) < DRAG_THRESHOLD_PX) return;
-        state.dragMoved = true;
-        canvas.classList.add("dragging");
-        tip.classList.remove("show");
-      }
-      dragLastX = px;
-      dragLastY = py;
-      if (movePending == null) {
-        movePending = requestAnimationFrame(() => {
-          movePending = null;
-          if (state.dragId == null) return; // released before the frame fired
-          applyDragMove(false);
-        });
-      }
-      return;
-    }
-    if (panning) {
-      if (!panMoved) {
-        if (Math.hypot(px - panDownX, py - panDownY) < DRAG_THRESHOLD_PX) return;
-        panMoved = true;
-        canvas.classList.add("panning");
-        tip.classList.remove("show");
-      }
-      renderer.panBy(px - panLastX, py - panLastY);
-      panLastX = px;
-      panLastY = py;
-      if (panDrawPending == null) {
-        panDrawPending = requestAnimationFrame(() => {
-          panDrawPending = null;
-          drawScene();
-        });
-      }
-      return;
-    }
-    const id = renderer.anchorAt(px, py, sceneData().anchors);
-    setHover(id);
-    if (id) showTip(e.clientX, e.clientY, id);
-    else tip.classList.remove("show");
-  });
-
-  canvas.addEventListener("pointerup", (e) => {
-    if (state.dragId) {
-      const id = state.dragId;
-      const moved = state.dragMoved;
-      cancelPendingDragMove();
-      if (moved) {
-        const [px, py] = canvasPos(e);
-        dragLastX = px;
-        dragLastY = py;
-        applyDragMove(true);
-      }
-      state.dragId = null;
-      state.dragMoved = false;
-      canvas.classList.remove("dragging");
-      canvas.releasePointerCapture(e.pointerId);
-      if (!moved) doProbe(id); // a click on an anchor IS the primary action
-      return;
-    }
-    if (panning) {
-      const moved = panMoved;
-      cancelPendingPanDraw();
-      panning = false;
-      panMoved = false;
-      canvas.classList.remove("panning");
-      canvas.releasePointerCapture(e.pointerId);
-      if (moved) drawScene(); // flush the final frame
-      return; // an unmoved background click is a no-op, same as before
-    }
-    if (state.placing) {
-      const [px, py] = canvasPos(e);
-      const ll = renderer.cssToLatLon(px, py);
-      const id = `custom-${++state.customSeq}`;
-      engine.addAnchor({
-        id,
-        name: `Anchor @ ${ll.lat.toFixed(1)}°N ${ll.lon.toFixed(1)}°E`,
-        lat: ll.lat,
-        lon: ll.lon,
-      });
-      computeMinDist(id);
-      setPlacing(false);
-      rebuildAnchorCards();
-      refresh({ animate: true });
-    }
-  });
-
-  canvas.addEventListener("pointercancel", () => {
-    if (state.dragId) {
-      cancelPendingDragMove();
-      const moved = state.dragMoved;
-      state.dragId = null;
-      state.dragMoved = false;
-      canvas.classList.remove("dragging");
-      if (moved) refresh({ animate: true }); // settle where the drag left it
-      return;
-    }
-    if (panning) {
-      cancelPendingPanDraw();
-      panning = false;
-      panMoved = false;
-      canvas.classList.remove("panning");
-    }
-  });
-
-  canvas.addEventListener("pointerleave", () => {
-    if (!state.dragId && !panning) setHover(null);
-  });
-
-  canvas.addEventListener(
-    "wheel",
-    (e) => {
-      e.preventDefault();
-      const [px, py] = canvasPos(e);
-      const norm = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
-      renderer.zoomBy(px, py, Math.exp(-norm * 0.0015));
+  function flyTo(points, stepIndex, { snap = false } = {}) {
+    const target = frameTargetView(points, stepIndex);
+    const cur = renderer.getView();
+    const same =
+      Math.abs(cur.zoom - target.zoom) < 1e-3 &&
+      Math.abs(cur.wx - target.wx) < 1e-6 &&
+      Math.abs(cur.wy - target.wy) < 1e-6;
+    if (snap || reducedMotion.matches || same) {
+      renderer.setView(target);
+      camAnimating = false;
       drawScene();
+      return;
+    }
+    camFrom = cur;
+    camTo = target;
+    camT0 = performance.now();
+    if (!camAnimating) {
+      camAnimating = true;
+      requestAnimationFrame(camTick);
+    }
+  }
+
+  function camTick(now) {
+    if (!camAnimating) return;
+    const u = Math.min(1, (now - camT0) / CAMERA_MS);
+    const e = easeInOutCubic(u);
+    renderer.setView({
+      wx: camFrom.wx + (camTo.wx - camFrom.wx) * e,
+      wy: camFrom.wy + (camTo.wy - camFrom.wy) * e,
+      zoom: camFrom.zoom + (camTo.zoom - camFrom.zoom) * e,
+    });
+    drawScene();
+    if (u >= 1) {
+      camAnimating = false;
+      return;
+    }
+    requestAnimationFrame(camTick);
+  }
+
+
+  let settled = -1;
+  let timers = [];
+
+  function cancelTimers() {
+    for (const t of timers) clearTimeout(t);
+    timers = [];
+  }
+
+  function rebuildTo(i) {
+    for (let k = 0; k <= i; k++) {
+      for (const st of STEPS[k].stages) st.fn(engine);
+    }
+    settled = i;
+  }
+
+  function activate(i, { first = false } = {}) {
+    if (i === currentStep && !first && settled === i) return;
+    cancelTimers();
+    const forward = settled === i - 1;
+    currentStep = i;
+    railDots.forEach((d, k) => d.classList.toggle("current", k === i));
+    sections.forEach((s, k) => s.classList.toggle("active", k === i));
+
+    if (forward && STEPS[i].stages.length) {
+      const stages = STEPS[i].stages;
+      let k = 0;
+      while (k < stages.length && stages[k].delay === 0) {
+        stages[k].fn(engine);
+        k++;
+      }
+      settled = k === stages.length ? i : -1; // -1 while mid-flight
+      flyTo(STEPS[i].frame, i, { snap: first });
+      if (k > 0) refresh({ animate: true });
+      for (; k < stages.length; k++) {
+        const st = stages[k];
+        const last = k === stages.length - 1;
+        timers.push(
+          setTimeout(
+            () => {
+              st.fn(engine);
+              refresh({ animate: true });
+              if (last) settled = i;
+            },
+            reducedMotion.matches ? 0 : st.delay
+          )
+        );
+      }
+    } else {
+      rebuildTo(i);
+      flyTo(STEPS[i].frame, i, { snap: first });
+      refresh({ animate: !first });
+    }
+  }
+
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        activate(Number(entry.target.dataset.step));
+      }
     },
-    { passive: false }
+    { rootMargin: "-45% 0px -45% 0px", threshold: 0 }
   );
+  for (const s of sections) observer.observe(s);
 
-
-  const allowanceEl = $("#allowance");
-  function syncAllowanceLabel() {
-    const v = Number(allowanceEl.value);
-    $("#allowance-val").textContent = `${v.toFixed(3)} ms · −${Math.round(v * 150)} km`;
-  }
-  allowanceEl.addEventListener("input", () => {
-    engine.setEvaluatorParams({ allowance: Number(allowanceEl.value) });
-    syncAllowanceLabel();
-    refresh({ animate: false });
-  });
-
-  const interiorEl = $("#interior");
-  function syncInteriorLabel() {
-    $("#interior-val").textContent = `${Number(interiorEl.value).toFixed(1)} ms`;
-  }
-  interiorEl.addEventListener("input", () => {
-    engine.setEvaluatorParams({ assumed_interior_mean: Number(interiorEl.value) });
-    syncInteriorLabel();
-    refresh({ animate: false });
-  });
-
-  function wireSeg(sel, apply) {
-    const seg = $(sel);
-    seg.addEventListener("click", (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      for (const x of seg.querySelectorAll("button")) x.classList.toggle("active", x === b);
-      apply(b.dataset.v);
+  root.addEventListener("click", (ev) => {
+    const next = ev.target.closest("[data-next]");
+    const dot = ev.target.closest("[data-goto]");
+    const idx = next ? Number(next.dataset.next) : dot ? Number(dot.dataset.goto) : null;
+    if (idx == null) return;
+    sections[idx].scrollIntoView({
+      behavior: reducedMotion.matches ? "auto" : "smooth",
+      block: "start",
     });
-    return {
-      set(v) {
-        for (const x of seg.querySelectorAll("button"))
-          x.classList.toggle("active", x.dataset.v === v);
-      },
-    };
-  }
-
-
-  const fmtLatLon = (p) => `${p.lat.toFixed(2)}°N ${p.lon.toFixed(2)}°E`;
-
-  function updateAttesterCard(preset) {
-    const sim = engine.getSimulator();
-    $("#att-declared").textContent =
-      `${preset.declaredName ?? "—"} · ${fmtLatLon(sim.declared)}`;
-    $("#att-behavior").textContent =
-      sim.attack === "none"
-        ? "Honest — answers as quickly as it can"
-        : "Evasive — manipulates responses";
-    $("#att-true").textContent = state.revealTruth
-      ? `${preset.trueName ?? "—"} · ${fmtLatLon(sim.trueLocation)}`
-      : "Hidden";
-  }
-
-
-  const gridSeg = wireSeg("#grid-seg", (v) => {
-    rebuildGrid(v, Number($("#grid-res").value));
   });
 
-  const gridResEl = $("#grid-res");
-  gridResEl.addEventListener("change", () => {
-    rebuildGrid(currentShape(), Number(gridResEl.value));
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      renderer.resize();
+      flyTo(STEPS[currentStep].frame, currentStep, { snap: true });
+    }, 150);
   });
-  gridResEl.addEventListener("input", () => syncGridLabels(Number(gridResEl.value)));
 
-  const currentShape = () => engine.getGrid().shape;
-
-  function syncGridLabels(n = engine.getGrid().n) {
-    const g = engine.getGrid();
-    $("#grid-res-val").textContent = `${n} × ${n}`;
-    $("#grid-val").textContent = `${g.cellCount.toLocaleString("en-US")} cells`;
-  }
-
-  function rebuildGrid(shape, n) {
-    engine.rebuildGrid({ shape, n });
-    renderer.setGrid(engine.getGrid());
-    displayT = null; // sizes changed: snap, don't tween across lattices
-    for (const id of state.minDist.keys()) computeMinDist(id);
-    syncGridLabels();
-    gridSeg.set(shape);
-    refresh({ animate: false });
-  }
-
-  {
-    const row = $("#ramp-row");
-    row.innerHTML = RAMP_NAMES.map(
-      (name) =>
-        `<button data-ramp="${name}" type="button"><span class="swatch" style="background:${rampGradientCSS(name)}"></span><span class="rname">${name}</span></button>`
-    ).join("");
-    row.addEventListener("click", (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      state.ramp = b.dataset.ramp;
-      for (const x of row.querySelectorAll("button"))
-        x.classList.toggle("active", x === b);
-      renderer.setRamp(state.ramp);
-      $("#legend-bar").style.background = rampGradientCSS(state.ramp);
-      if (displayT) {
-        renderer.updateHeat(displayT);
-        drawScene();
-      }
-    });
-    row.querySelector(`button[data-ramp="${state.ramp}"]`).classList.add("active");
-    renderer.setRamp(state.ramp);
-    $("#legend-bar").style.background = rampGradientCSS(state.ramp);
-  }
-
-  {
-    const el = $("#opacity");
-    el.value = String(Math.round(state.opacity * 100));
-    $("#opacity-val").textContent = `${el.value}%`;
-    renderer.setOpacity(state.opacity);
-    el.addEventListener("input", () => {
-      state.opacity = Number(el.value) / 100;
-      $("#opacity-val").textContent = `${el.value}%`;
-      renderer.setOpacity(state.opacity);
+  window
+    .matchMedia("(prefers-color-scheme: dark)")
+    .addEventListener("change", () => {
+      renderer.refreshTheme();
       drawScene();
     });
-  }
 
-
-  $("#reveal-truth").addEventListener("change", (e) => {
-    state.revealTruth = e.target.checked;
-    if (state.preset) updateAttesterCard(state.preset);
-    drawScene();
-  });
-
-  $("#reset-btn").addEventListener("click", () => loadPreset(state.presetId));
-
-
-  {
-    const card = $("#params-card");
-    const toggle = $("#params-collapse");
-    toggle.addEventListener("click", () => {
-      const collapsed = card.classList.toggle("collapsed");
-      toggle.setAttribute("aria-expanded", String(!collapsed));
-      toggle.setAttribute("aria-label", collapsed ? "expand parameters" : "collapse parameters");
-    });
-  }
-
-
-  const framePoints = () => {
-    const sim = engine.getSimulator();
-    const pts = [sim.declared, ...engine.getAnchors()];
-    if (state.revealTruth) pts.push(sim.trueLocation);
-    return pts;
-  };
-  const frameObstruction = () => {
-    const cardRect = $("#params-card").getBoundingClientRect();
-    const mapRect = canvas.getBoundingClientRect();
-    return Math.max(0, mapRect.right - cardRect.left);
-  };
-  const frameObstructionLeft = () => {
-    const cardRect = root.querySelector(".scenario-card").getBoundingClientRect();
-    const mapRect = canvas.getBoundingClientRect();
-    return Math.max(0, cardRect.right - mapRect.left);
-  };
-
-  $("#reset-view-btn").addEventListener("click", () => {
-    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
-    drawScene();
-  });
-
-  {
-    const chips = $("#preset-chips");
-    chips.innerHTML = PRESETS.map(
-      (p, i) => `<button class="chip" data-preset="${p.id}" type="button">${i + 1} · ${esc(p.name)}</button>`
-    ).join("");
-    chips.addEventListener("click", (e) => {
-      const b = e.target.closest("button");
-      if (b) loadPreset(b.dataset.preset);
-    });
-  }
-
-  function loadPreset(id) {
-    const preset = engine.loadPreset(id);
-    state.presetId = id;
-    state.preset = preset;
-    state.clockMs = NOON;
-    state.hoverId = null;
-    state.minDist.clear();
-    for (const a of engine.getAnchors()) computeMinDist(a.id);
-    setPlacing(false);
-
-    state.revealTruth = id === "evasive";
-    $("#reveal-truth").checked = state.revealTruth;
-
-    renderer.setWindow(engine.getWindowCenter());
-    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
-
-    const ev = engine.getEvaluatorParams();
-    allowanceEl.value = ev.allowance;
-    syncAllowanceLabel();
-    interiorEl.value = ev.assumed_interior_mean;
-    syncInteriorLabel();
-    updateAttesterCard(preset);
-
-    for (const b of $("#preset-chips").querySelectorAll("button"))
-      b.classList.toggle("active", b.dataset.preset === id);
-
-    $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";
-
-    displayT = null; // fresh scenario: snap to its (uniform) prior
-    rebuildAnchorCards();
-    refresh({ animate: false });
-  }
-
-
-  const ro = new ResizeObserver(() => drawScene());
-  ro.observe(canvas.parentElement);
-
-  const darkMq = window.matchMedia("(prefers-color-scheme: dark)");
-  const onTheme = () => {
-    renderer.refreshTheme();
-    drawScene();
-  };
-  if (darkMq.addEventListener) darkMq.addEventListener("change", onTheme);
-
-
-  syncGridLabels();
-  loadPreset("baseline");
+  activate(0, { first: true });
 }
 
-// ---- main.js ----
 
-
-function wantsStory() {
-  if (new URLSearchParams(location.search).has("full")) return false;
-  return window.matchMedia("(max-width: 760px)").matches;
-}
-
-function boot() {
-  if (wantsStory()) {
-    location.replace("./story.html");
-    return;
-  }
-  buildApp(document.getElementById("root"));
+function bootStory() {
+  buildStory(document.getElementById("root"));
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot);
+  document.addEventListener("DOMContentLoaded", bootStory);
 } else {
-  boot();
+  bootStory();
 }
 
 })();

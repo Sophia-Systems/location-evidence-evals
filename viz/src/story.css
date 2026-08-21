@@ -1,0 +1,342 @@
+/* story.css -- the mobile scroll story.
+   Same "verifier's bench" voice as style.css: warm paper in light,
+   green-black in dark, hairline rules, mono eyebrows, #006a4e accent.
+   The theme tokens below MIRROR style.css -- render.js reads them off
+   document.body at runtime, so the two pages stay in one palette. If a
+   token changes there, change it here. */
+
+:root {
+  --font-ui: "Avenir Next", "Seravek", "Gill Sans", ui-sans-serif, system-ui,
+    sans-serif;
+  --font-mono: "SF Mono", "Menlo", "Cascadia Code", ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  --surface: #f7f5ef;
+  --surface-2: #efede4;
+  --card: #fdfcf8;
+  --ink: #212722;
+  --ink-soft: #545b53;
+  --ink-faint: #8a9089;
+  --accent: #006a4e;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(0, 106, 78, 0.1);
+  --warn: #a85417;
+  --warn-soft: rgba(168, 84, 23, 0.1);
+  --line: #ddd9cb;
+  --map-water: #f1efe6;
+  --map-coast: #ada793;
+  --map-border: #c6c1af;
+  --shadow: 0 1px 2px rgba(30, 33, 28, 0.06), 0 4px 16px rgba(30, 33, 28, 0.07);
+  --card-veil: rgba(253, 252, 248, 0.88);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #0f1411;
+    --surface-2: #141a16;
+    --card: #171e19;
+    --ink: #e5eae3;
+    --ink-soft: #a8b0a7;
+    --ink-faint: #6e766e;
+    --accent: #1a916b;
+    --accent-ink: #06130d;
+    --accent-soft: rgba(38, 166, 124, 0.14);
+    --warn: #d07f3f;
+    --warn-soft: rgba(208, 127, 63, 0.14);
+    --line: #252d26;
+    --map-water: #121a14;
+    --map-coast: #46514a;
+    --map-border: #303a32;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 20px rgba(0, 0, 0, 0.35);
+    --card-veil: rgba(23, 30, 25, 0.9);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- scrollytelling scaffold --------------------------------------------
+   One sticky full-viewport map behind a column of step sections. The map is
+   scenery: it takes no pointer input; the page just scrolls. */
+
+.story {
+  position: relative;
+}
+
+.story-graphic {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 0;
+}
+
+.story-graphic canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.story-attribution {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  font-size: 9px;
+  color: var(--ink-faint);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  padding: 1px 5px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.story-steps {
+  position: relative;
+  z-index: 1;
+  margin-top: -100vh;
+  margin-top: -100dvh;
+  pointer-events: none; /* cards re-enable it */
+}
+
+.story-step {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0 14px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+
+/* extra runway after each card so a step holds the stage while its map
+   settles, instead of the next card arriving immediately */
+.story-step + .story-step {
+  margin-top: 24vh;
+}
+
+/* the title slide: card centered on the viewport; the map story begins as
+   the reader scrolls past it */
+.story-step.centered {
+  justify-content: center;
+}
+
+/* ---- cards --------------------------------------------------------------- */
+
+.story-card {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 480px;
+  background: var(--card-veil);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px 12px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 320ms var(--ease-out), transform 320ms var(--ease-out);
+}
+
+.story-step.active .story-card {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.story-card h1 {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.story-card h2 {
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 600;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.story-card p {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+
+.story-card p:last-child {
+  margin-bottom: 0;
+}
+
+.story-card strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.story-card .mark {
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.story-card p a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.story-card .aside {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+/* quiet per-card step-through affordance */
+.story-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out), background 160ms ease;
+}
+
+.story-next:active {
+  transform: scale(0.96);
+  background: var(--accent-soft);
+}
+
+/* ---- intro extras -------------------------------------------------------- */
+
+.scroll-cue {
+  display: block;
+  margin: 10px auto 0;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-faint);
+  animation: cue-bob 1.8s ease-in-out infinite;
+}
+
+@keyframes cue-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 0.95;
+  }
+}
+
+/* ---- closing links ------------------------------------------------------- */
+
+.story-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.story-links a {
+  display: block;
+  text-align: center;
+  padding: 10px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  transition: transform 160ms var(--ease-out);
+}
+
+.story-links a:active {
+  transform: scale(0.97);
+}
+
+.story-links .primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.story-links .secondary {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--card);
+}
+
+/* ---- progress rail ------------------------------------------------------- */
+
+.story-rail {
+  position: fixed;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 4px;
+}
+
+.story-rail button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 200ms ease, transform 200ms var(--ease-out),
+    background 200ms ease;
+}
+
+.story-rail button.current {
+  background: var(--accent);
+  opacity: 1;
+  transform: scale(1.45);
+}
+
+/* ---- reduced motion ------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .story-card {
+    transform: none;
+    transition: opacity 200ms ease;
+  }
+  .scroll-cue {
+    animation: none;
+  }
+}

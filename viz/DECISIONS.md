@@ -518,3 +518,87 @@ following those.
     no longer spills past the box, and default framing now subtracts the
     LEFT column's obstruction as well as the right's, so the staging
     centers in the visible gap (frameWindow gained an obstructLeft).
+
+## v4: the mobile story
+
+46. **Small screens get a scroll story, not a squeezed bench.** *(Adjudicated
+    by John: a very simplified mobile experience -- "a step through or scroll
+    story visualizing the key idea".)* The bench pins `min-width: 1080px` and
+    PROMPT.md says desktop-optimized, mobile only if free; instead of a
+    responsive retrofit, a second self-contained page `viz/story.html`
+    (build.mjs now emits both) tells the one idea in six beats over the same
+    engine and renderer: the claim (uniform belief), one receipt (erasure),
+    geometry (the lens on Cambridge), trust (the same receipts prove less at
+    collusion risk 0.30), the lie (evasive preset, padding toward Tallinn),
+    detection (truth revealed in St Petersburg -- the false claim falsified;
+    the allowance and anchor-independence caveats close as an aside, per
+    John's correction that the story must END on detection, result 5, not on
+    the allowance failure, result 4). Mechanics: a sticky full-viewport map
+    behind scroll-driven cards (IntersectionObserver, plus per-card "next"
+    buttons and a progress rail); steps are CUMULATIVE engine ops replayed
+    from a fixed-seed base, so scrolling in any order reproduces identical
+    state -- forward-by-one plays the step's staged probes, any other jump
+    rebuilds silently and tweens once. The camera fit reuses computeViewFit
+    with the bench's obstruction idea turned vertical (the card floats over
+    the viewport bottom; the stage centers in the unobstructed region), via
+    new raw view accessors (getView/setView) on the renderer. Two display
+    divergences from the bench, both because the cards narrate the wash:
+    uniform-belief tint 0.22 -> 0.32 and overlay opacity 100%.
+    buildTargetT/presentField are copied from ui.js rather than shared --
+    ui.js keeps them private to buildApp, and extracting them mid-flight was
+    judged worse than a noted duplication. story.css mirrors the theme
+    tokens for the same reason (render.js reads them off document.body).
+    index.html redirects viewports <= 760 px to the story; `?full` is the
+    escape hatch, and the story's own "full demo" link uses it so the pages
+    never bounce.
+
+47. **Story pared to five calibrated steps.** *(Adjudicated by John,
+    reviewing item 46's build.)* Directions applied: eyebrows and the kicker
+    removed (cards open with their heading; the progress rail alone carries
+    position); the OPERATOR declares, the DEVICE is measured -- wording fixed
+    throughout; the "locations inside stay roughly equally plausible" claim
+    cut (it contradicts the on-screen ring-shaped interior); the trust beat
+    REMOVED entirely (anchor trust is not a concept the mobile story should
+    introduce); the padding/inflation mechanism no longer narrated in the
+    false-declaration beat (the story shows only that probability mass
+    settles away from the declared location -- lacing in the latency nuance
+    was judged a mistake); and the closing claim recalibrated from "the
+    declaration is falsified" to "the declaration is improbable ... grounds
+    to flag it for scrutiny," with an explicit "simplified, illustrative
+    simulation" aside -- John's standing rule: never overstate; humble,
+    accurate, understated language over persuasion. Framing fix recorded
+    with it: both false-declaration steps frame the ACTUAL location too, and
+    the story's camera fit dropped computeViewFit's boundary-cover clamp
+    (which compressed margins to zero on narrow viewports and cropped the
+    truth crosshair) for a plain bbox frame fit at a fixed margin -- the
+    story's framings sit well inside the window, so the clamp bought
+    nothing.
+
+48. **Title slide opens the story with the desktop intro.** *(Adjudicated by
+    John: the opening was abrupt -- lead with "Verifying compute location"
+    and the intro he added to the desktop scenario card, then scroll into
+    the map.)* New centered step 0 reuses the desktop blurbs near-verbatim
+    (its third paragraph adapted to name this page a walkthrough); its map
+    is backdrop, so the fit COVER-fits the staged region on the full
+    viewport (a contain fit on a tall phone stretched to the window
+    boundary and north Africa), while story steps keep the contain fit
+    above the card. The declaration card is cut to what is on screen --
+    marker, anchors, uniform overlay -- with "without relying on the
+    operator's word" and the aim statement dropped as overexplanation. The
+    closing aside now says the desktop version "has more features" instead
+    of "the full demo," and its link reads "Open the desktop version."
+
+49. **Orientation beat, solid declared marker, research link first.**
+    *(Adjudicated by John.)* The false-declaration sequence split in two:
+    the scenario jump lands on an orientation step (new area, uniform
+    field, declared Tallinn, no evidence yet), and the next scroll expands
+    the frame to include the actual location while the staged probes render
+    the heatmap ("The anchors probe it"). The story's declared marker is a
+    solid fill via a new scene.declaredSolid flag -- the bench keeps its
+    deliberately translucent interior (item 43), which on the story read as
+    a rendering mistake; the story's guided camera keeps the peak visible
+    around the marker anyway. The closing card leads with "About this
+    research" as the primary action (driving phone readers to the site
+    beats sending them to a desktop-only page); the desktop link is
+    secondary. The declaration card also drops its "Before any
+    measurements..." sentence.
