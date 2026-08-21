@@ -69,8 +69,9 @@ const EVASIVE_TRUTH = [
 
 const STEPS = [
   {
-    id: "claim",
-    label: "the declaration",
+    id: "title",
+    label: "introduction",
+    centered: true,
     frame: BASE_STAGE,
     reveal: false,
     stages: [
@@ -82,19 +83,42 @@ const STEPS = [
         },
       },
     ],
+    // Intro copy mirrors the desktop scenario card's blurbs (John's wording).
     card: `
-      <h1>An operator declares a device&rsquo;s location: Cambridge.</h1>
-      <p>The aim is to evaluate that declaration from network measurements,
-      without relying on the operator&rsquo;s word. The ringed marker is the
-      declared location; the colored overlay is a probability distribution
-      over the device&rsquo;s location &mdash; uniform until there is
-      evidence.</p>
-      <p>The green dots are <strong>anchors</strong>: machines at known
-      locations that take the measurements.</p>
+      <h1><span class="mark">&#9673;</span> Verifying compute location</h1>
+      <p>Verifying the location of advanced AI chips is a way to detect
+      whether they&rsquo;re being used as declared, and reduce the
+      proliferation risk of dangerous models.</p>
+      <p>Latency-based location verification asks machines at known locations
+      &mdash; <strong>anchor nodes</strong> &mdash; to probe
+      <strong>attester nodes</strong> operating sensitive GPUs. Attesters
+      cryptographically sign challenges then respond; distance is inferred
+      from the round-trip time measured by anchors. Since these pings
+      can&rsquo;t exceed the speed of light, each receipt bounds where the
+      attester machine can be.</p>
+      <p>This page is a short walkthrough of how that evidence updates the
+      spatial probability distribution of where a device might be. It is part
+      of <a href="https://johnx.co/research">ongoing research</a> to advance
+      location verification so we can make better-informed policy decisions
+      to govern AI advancement.</p>
       <svg class="scroll-cue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`,
+  },
+  {
+    id: "claim",
+    label: "the declaration",
+    frame: BASE_STAGE,
+    reveal: false,
+    stages: [],
+    card: `
+      <h2>An operator declares a device&rsquo;s location: Cambridge.</h2>
+      <p>The ringed marker is the declared location. The green dots are
+      <strong>anchors</strong>.</p>
+      <p>The colored overlay is a probability distribution over where the
+      device actually is. Before any measurements it is uniform &mdash; the
+      evidence will reshape it.</p>`,
   },
   {
     id: "receipt",
@@ -165,9 +189,10 @@ const STEPS = [
       <p>That does not disprove the declaration &mdash; it makes it
       improbable, which is grounds to flag it for scrutiny.</p>
       <p class="aside">This page is a simplified, illustrative simulation.
-      The full demo exposes the model&rsquo;s parameters and assumptions.</p>
+      The desktop version of this demo has more features and exposes the
+      model&rsquo;s parameters and assumptions.</p>
       <div class="story-links">
-        <a class="primary" href="./index.html?full">Explore the full demo (desktop)</a>
+        <a class="primary" href="./index.html?full">Open the desktop version</a>
         <a class="secondary" href="https://johnx.co/research">About this research</a>
       </div>`,
   },
@@ -185,7 +210,7 @@ function buildStory(root) {
     <div class="story-steps">
       ${STEPS.map(
         (s, i) => `
-      <section class="story-step" data-step="${i}">
+      <section class="story-step${s.centered ? " centered" : ""}" data-step="${i}">
         <div class="story-card">
           ${s.card}
           ${
@@ -376,8 +401,13 @@ function buildStory(root) {
     const wCss = rect.width;
     const hCss = rect.height;
     if (!(wCss > 0) || !(hCss > 0)) return renderer.getView();
+    // Bottom-anchored cards obstruct the lower viewport, so the stage
+    // centers in the region above them. The centered title card floats over
+    // the middle instead -- fit the full viewport there, or the map behind
+    // it ends up framing the far south of the window.
     const card = sections[stepIndex]?.querySelector(".story-card");
-    const obstruct = card ? card.offsetHeight + 40 : 0;
+    const obstruct =
+      card && !STEPS[stepIndex].centered ? card.offsetHeight + 40 : 0;
     const effH = Math.max(hCss - obstruct, hCss * 0.4);
     let x0 = Infinity;
     let y0 = Infinity;
@@ -394,7 +424,14 @@ function buildStory(root) {
     const MARGIN = 0.14; // per side, fraction of the framed region
     const bw = Math.max(x1 - x0, 1e-9);
     const bh = Math.max(y1 - y0, 1e-9);
-    const scale = Math.min((wCss * (1 - 2 * MARGIN)) / bw, (effH * (1 - 2 * MARGIN)) / bh);
+    // Story steps CONTAIN the stage (every framed point visible with
+    // margin). The title slide's map is backdrop, not exhibit: COVER-fit the
+    // stage so a tall viewport fills with the staged region instead of
+    // stretching to the window boundary and beyond.
+    const scale =
+      STEPS[stepIndex].centered
+        ? Math.max(wCss / bw, effH / bh)
+        : Math.min((wCss * (1 - 2 * MARGIN)) / bw, (effH * (1 - 2 * MARGIN)) / bh);
     const zoom = Math.log2(scale);
     const s = Math.pow(2, zoom);
     const saved = renderer.getView();

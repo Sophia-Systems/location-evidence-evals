@@ -138,6 +138,12 @@ body {
   margin-top: 24vh;
 }
 
+/* the title slide: card centered on the viewport; the map story begins as
+   the reader scrolls past it */
+.story-step.centered {
+  justify-content: center;
+}
+
 /* ---- cards --------------------------------------------------------------- */
 
 .story-card {
@@ -189,6 +195,17 @@ body {
 .story-card strong {
   color: var(--ink);
   font-weight: 600;
+}
+
+.story-card .mark {
+  color: var(--accent);
+  margin-right: 2px;
+}
+
+.story-card p a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .story-card .aside {

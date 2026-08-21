@@ -540,3 +540,17 @@ following those.
     truth crosshair) for a plain bbox frame fit at a fixed margin -- the
     story's framings sit well inside the window, so the clamp bought
     nothing.
+
+46. **Title slide opens the story with the desktop intro.** *(Adjudicated by
+    John: the opening was abrupt -- lead with "Verifying compute location"
+    and the intro he added to the desktop scenario card, then scroll into
+    the map.)* New centered step 0 reuses the desktop blurbs near-verbatim
+    (its third paragraph adapted to name this page a walkthrough); its map
+    is backdrop, so the fit COVER-fits the staged region on the full
+    viewport (a contain fit on a tall phone stretched to the window
+    boundary and north Africa), while story steps keep the contain fit
+    above the card. The declaration card is cut to what is on screen --
+    marker, anchors, uniform overlay -- with "without relying on the
+    operator's word" and the aim statement dropped as overexplanation. The
+    closing aside now says the desktop version "has more features" instead
+    of "the full demo," and its link reads "Open the desktop version."
