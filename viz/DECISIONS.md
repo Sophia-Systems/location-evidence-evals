@@ -503,3 +503,18 @@ following those.
     sentence-cased throughout (parameter/variable names stay as symbols).
     Evidence rows no longer shrink when several are expanded (flex: none;
     receipt fields wrap). Credits added to "About this model".
+
+45. **Third review round (adjudicated by John).** Title is "Verifying
+    compute location" (page <title> too). Blurb: attester nodes "operating
+    sensitive GPUs"; the research link reads as a link (weight + tasteful
+    underline). The attester block moved inside the scenario card under a
+    "Scenario" header (chips + Reset + attester rows); behavior wording is
+    simply "Evasive -- manipulates responses". The preset caption and the
+    assumptions line (compliant attester / allowance / uniform prior) are
+    gone -- jargon without a reader. Credits link John Hoopes ->
+    johnx.co/research and CAISH Hardware Assurance Programme ->
+    caish.org/hardware (both whitelisted as nav-only hrefs). The map
+    tooltip sizes to its content (width: max-content) so the risk/cap line
+    no longer spills past the box, and default framing now subtracts the
+    LEFT column's obstruction as well as the right's, so the staging
+    centers in the visible gap (frameWindow gained an obstructLeft).

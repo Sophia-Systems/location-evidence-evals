@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Location evidence — evidence evaluation, visualized</title>
+<title>Verifying compute location</title>
 <style>
 /* style.css -- the verifier's bench.
    Quiet precision-instrument styling: warm paper in light, green-black in
@@ -191,11 +191,16 @@ body {
 
 .blurb a {
   color: var(--accent);
-  text-decoration: none;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: text-decoration-color 140ms var(--ease-out);
 }
 
 .blurb a:hover {
-  text-decoration: underline;
+  text-decoration-color: var(--accent);
 }
 
 .tutorial {
@@ -213,14 +218,32 @@ body {
   color: var(--ink-soft);
 }
 
-/* attester card: the machine under test, staged by the scenario */
+/* Scenario section header inside the scenario card */
 
-.attester-card {
-  flex: none;
+.sec-head {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
 }
 
-.att-body {
-  padding: 8px 14px 10px;
+/* attester block: the machine under test, staged by the scenario */
+
+.att-block {
+  margin-top: 9px;
+}
+
+.att-sub {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
 }
 
 .att-row {
@@ -574,21 +597,6 @@ details.fold .fold-body .credits {
   color: var(--ink-soft);
 }
 
-/* assumptions line: lives in the scenario card, right under the caption --
-   the qualifiers the current map is computed under */
-
-.assumptions {
-  margin-top: 8px;
-  font: 500 10px var(--font-mono);
-  color: var(--ink-faint);
-  border: 1px dashed var(--line);
-  border-radius: 7px;
-  padding: 5px 8px;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
 /* tile attribution: bottom edge, beneath the HUD stack */
 
 .map-attribution {
@@ -610,6 +618,8 @@ details.fold .fold-body .credits {
 
 #map-tip {
   position: absolute;
+  width: max-content; /* shrink-to-fit near the pane edge must not squeeze the pre text out of the box */
+  max-width: 260px;
   pointer-events: none;
   background: var(--card);
   color: var(--ink);
@@ -4766,7 +4776,7 @@ function createRenderer(canvas) {
     ctx.restore();
   }
 
-  function frameWindow(points, obstructRight = 0) {
+  function frameWindow(points, obstructRight = 0, obstructLeft = 0) {
     resize();
     if (!boundaryPts || !(wCss > 0)) return;
     let framed = null;
@@ -4777,13 +4787,13 @@ function createRenderer(canvas) {
       });
       if (!framed.length) framed = null;
     }
-    const effW = framed
-      ? Math.max(wCss - Math.max(0, obstructRight), wCss * 0.55)
-      : wCss;
+    const cutR = Math.max(0, obstructRight);
+    const cutL = Math.max(0, obstructLeft);
+    const effW = framed ? Math.max(wCss - cutR - cutL, wCss * 0.45) : wCss;
     const fit = computeViewFit(effW, hCss, windowCenter, framed, boundaryPts);
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit.scale)));
     const s = Math.pow(2, zoom);
-    viewCenter = { wx: fit.cx + (wCss - effW) / (2 * s), wy: fit.cy };
+    viewCenter = { wx: fit.cx + (wCss / 2 - cutL - effW / 2) / s, wy: fit.cy };
     clampView();
   }
 
@@ -4847,8 +4857,6 @@ const INFO = {
     "The lattice holding the posterior over the region under evaluation (the dashed window). Display layout only -- every distance in the model is great-circle.",
   floor:
     "Color is log-scaled relative to the brightest cell; a dim haze means the evidence discriminates little. Outside a circle, brightness never drops to zero -- residual doubt (collusion, forged signatures, faults) is kept explicit, and its depth is set by anchor trust.",
-  posture:
-    "The assumptions the current map is computed under -- they travel with any location assessment. This evaluator always assumes a compliant attester; the evasive scenario deliberately violates that so you can watch what it costs.",
 };
 
 
@@ -4895,16 +4903,16 @@ function buildApp(root) {
       <div class="left-col">
       <section class="card scenario-card">
         <div class="brand">
-          <h1><span class="mark">◉</span> Location evidence</h1>
+          <h1><span class="mark">◉</span> Verifying compute location</h1>
         </div>
         <p class="blurb">Verifying the location of advanced AI chips is a way to
           detect whether they're being used as declared, and reduce the
           proliferation risk of dangerous models.</p>
         <p class="blurb">Latency-based location verification asks machines at
           known locations -- <b>anchor nodes</b> -- to probe <b>attester nodes</b>
-          with governed GPUs. Attesters cryptographically sign challenges then
-          respond; distance is inferred from the round-trip time measured by
-          anchors. Since these pings can't exceed the speed of light, each
+          operating sensitive GPUs. Attesters cryptographically sign challenges
+          then respond; distance is inferred from the round-trip time measured
+          by anchors. Since these pings can't exceed the speed of light, each
           receipt bounds where the attester machine can be.</p>
         <p class="blurb">This demo visualizes how new evidence updates the
           <b>spatial probability distribution</b> of where an attester might be.
@@ -4923,18 +4931,13 @@ function buildApp(root) {
             </ol>
           </div>
         </details>
+        <div class="sec-head">Scenario</div>
         <div class="chips-row">
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
         </div>
-        <div class="preset-caption" id="preset-caption"></div>
-        <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
-      </section>
-
-      <!-- attester: the machine under test -- part of the scenario -->
-      <section class="card attester-card">
-        <div class="evidence-head"><span>Attester</span></div>
-        <div class="att-body">
+        <div class="att-block">
+          <div class="att-sub">Attester</div>
           <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
           <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
           <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
@@ -5009,7 +5012,7 @@ function buildApp(root) {
             <div class="fold-body">
               <p>The posterior lives on the dashed ~3,600 km window -- the region under evaluation. Every distance is great-circle; country borders are drawn only to orient you.</p>
               <p>Everything here locates <i>the machine holding the attester's signing key</i>; binding that key to particular hardware is a separate, unsolved problem, and forged signatures would void every bound on this page.</p>
-              <p class="credits">Developed by John Hoopes in collaboration with Anna Wisakanto and Ryan Bevin at CAISH Hardware Assurance Programme, August 2026. Thanks to Taylor Oshan, Adam Spiers, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
+              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
             </div>
           </details>
           <details class="fold probe-anatomy" id="anatomy-fold">
@@ -5185,15 +5188,6 @@ function buildApp(root) {
 
 
   function updateGlobalReadouts() {
-    const ro = state.lastReadouts;
-    const ev = engine.getEvaluatorParams();
-    const pis = ro.perAnchor.map((a) => a.pi);
-    const piSummary = pis.length
-      ? `collusion risk ${Math.min(...pis).toFixed(2)}–${Math.max(...pis).toFixed(2)}`
-      : "no anchors";
-    $("#assumptions-text").textContent =
-      `Assumes compliant attester · allowance ${ev.allowance.toFixed(3)} ms` +
-      ` · ${piSummary} · uniform prior`;
     updateEvidenceLog();
   }
 
@@ -5528,7 +5522,7 @@ function buildApp(root) {
       <div class="tip-stats">latest RTT  ${fmtMsVal(ra.latestRtt)}
 rtt_min     ${fmtMsVal(ra.rttMin)}
 exclusion r ${fmtKm(ra.exclusionRadiusKm)}
-collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</div>
+risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
       <div class="tip-hint">Click to probe · drag to move</div>`;
     const pane = canvas.parentElement.getBoundingClientRect();
     tip.style.left = `${clientX - pane.left + 14}px`;
@@ -5769,9 +5763,7 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     $("#att-behavior").textContent =
       sim.attack === "none"
         ? "Honest — answers as quickly as it can"
-        : sim.attack === "inflation"
-          ? "Evasive — pads answers to mimic the declared location"
-          : "Evasive — answers faster than the verifier assumes";
+        : "Evasive — manipulates responses";
     $("#att-true").textContent = state.revealTruth
       ? `${preset.trueName ?? "—"} · ${fmtLatLon(sim.trueLocation)}`
       : "Hidden";
@@ -5875,9 +5867,14 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     const mapRect = canvas.getBoundingClientRect();
     return Math.max(0, mapRect.right - cardRect.left);
   };
+  const frameObstructionLeft = () => {
+    const cardRect = root.querySelector(".scenario-card").getBoundingClientRect();
+    const mapRect = canvas.getBoundingClientRect();
+    return Math.max(0, cardRect.right - mapRect.left);
+  };
 
   $("#reset-view-btn").addEventListener("click", () => {
-    renderer.frameWindow(framePoints(), frameObstruction());
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
     drawScene();
   });
 
@@ -5906,7 +5903,7 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     $("#reveal-truth").checked = state.revealTruth;
 
     renderer.setWindow(engine.getWindowCenter());
-    renderer.frameWindow(framePoints(), frameObstruction());
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
 
     const ev = engine.getEvaluatorParams();
     allowanceEl.value = ev.allowance;
@@ -5917,7 +5914,6 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
 
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
-    $("#preset-caption").textContent = preset.caption;
 
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";
 
