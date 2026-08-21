@@ -15,10 +15,14 @@ evaluate(receipts, anchor_metadata, prior, variant, time_interval)
 
 The substance lives in the paper draft: [`paper/evidence-evaluation.md`](paper/evidence-evaluation.md).
 
+## The interactive demo
+
+The visualization built from [`PROMPT.md`](PROMPT.md) now lives in the deployed site repo, [johnx25bd/research-notes-frontend](https://github.com/johnx25bd/research-notes-frontend), and is served at [johnx.co/demos/location-evidence-evals](https://johnx.co/demos/location-evidence-evals) (mobile story at [/story](https://johnx.co/demos/location-evidence-evals/story)). Its source, build tooling, and design log are preserved on this repository's [`demo`](https://github.com/Sophia-Systems/location-evidence-evals/tree/demo) branch, full commit history intact -- develop there, deploy by copying the built pages into the site repo.
+
 ## Layout
 
 - [`paper/evidence-evaluation.md`](paper/evidence-evaluation.md) -- the working draft: measurement primitive, exclusion radii, the delay allowance, the evidence evaluation function, anchor trust and the trust cap, qualifiers Q, and the three nested variants
 - [`PROMPT.md`](PROMPT.md) -- build specification for the interactive visualization
 - [`open-questions.md`](open-questions.md) -- running list of open questions
 - `src/` (planned) -- reference implementation of `evaluate(...)`
-- `viz/` (planned) -- the visualization, built to PROMPT.md
+- `viz/` -- moved: see [the interactive demo](#the-interactive-demo) above
