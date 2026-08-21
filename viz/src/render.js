@@ -34,10 +34,11 @@ export function createRenderer(canvas) {
   refreshTheme();
 
   // ---- geometry --------------------------------------------------------
-  // The canvas is now full-bleed and generally NOT square (item 1: the map
+  // The canvas is full-bleed and generally NOT square (item 1: the map
   // extends to all four viewport edges). wCss/hCss are its css-px extent;
-  // kmToCss/cssToKm compose a fit-to-contain baseline (the whole domain
-  // fits within the smaller dimension at zoom 1x) with a pan/zoom view
+  // kmToCss/cssToKm compose a COVER-fit baseline (at zoom 1x the square
+  // domain covers the whole viewport, cropping its top/bottom or sides as
+  // the aspect ratio requires -- no dead bands, ever) with a pan/zoom view
   // transform (item 2) -- a pure 2D affine map, no reprojection. Every
   // caller (heat layer, coastlines/borders, exclusion circles, anchors,
   // declared star, truth crosshair, hover hit-testing, click-to-place)
@@ -46,9 +47,9 @@ export function createRenderer(canvas) {
   let hCss = 0; // css px
   let dpr = 1;
 
-  const MIN_ZOOM = 1;
+  const MIN_ZOOM = 1; // 1x = cover-fit: domain covers the viewport
   const MAX_ZOOM = 8;
-  let viewScale = 1; // 1x = current full-domain fit
+  let viewScale = 1;
   let viewCenter = { x: 0, y: 0 }; // km, domain point at canvas center
 
   function resize() {
@@ -62,12 +63,15 @@ export function createRenderer(canvas) {
       canvas.width = pw;
       canvas.height = ph;
     }
+    // a viewport resize changes the cover-fit scale, so the visible window
+    // may now poke past the domain edge: re-clamp
+    clampCenter();
   }
 
-  // km per css px at the current zoom, fit-to-contain baseline against the
-  // SHORTER canvas dimension (so the full domain is always visible at 1x,
-  // whatever the viewport's aspect ratio).
-  const pxPerKmNow = () => (Math.min(wCss, hCss) / DOMAIN) * viewScale;
+  // km per css px at the current zoom, cover-fit baseline against the
+  // LONGER canvas dimension (so the domain covers the viewport at 1x,
+  // whatever the aspect ratio -- the shorter dimension crops the domain).
+  const pxPerKmNow = () => (Math.max(wCss, hCss) / DOMAIN) * viewScale;
 
   const kmToCss = (x, y) => {
     const s = pxPerKmNow();
@@ -86,13 +90,18 @@ export function createRenderer(canvas) {
     return unproject(x, y);
   };
 
-  // Keep at least a generous margin of the domain reachable -- a loose
-  // guard against panning so far that the map is lost entirely, not a tight
-  // bound (free exploration is the point of panning).
+  // Tight pan clamp: the visible window must stay inside the domain square
+  // at every zoom (cover-fit guarantees the window fits; this pins it), so
+  // no outside-the-domain space -- dead background past the posterior grid
+  // -- is ever on screen. On the axis the viewport exactly spans at the
+  // current zoom the play is zero and the center pins to 0.
   function clampCenter() {
-    const margin = HALF_EXTENT * 1.3;
-    viewCenter.x = Math.max(-margin, Math.min(margin, viewCenter.x));
-    viewCenter.y = Math.max(-margin, Math.min(margin, viewCenter.y));
+    const s = pxPerKmNow();
+    if (!(s > 0)) return; // pre-layout: nothing to clamp against yet
+    const playX = Math.max(0, HALF_EXTENT - wCss / (2 * s));
+    const playY = Math.max(0, HALF_EXTENT - hCss / (2 * s));
+    viewCenter.x = Math.max(-playX, Math.min(playX, viewCenter.x));
+    viewCenter.y = Math.max(-playY, Math.min(playY, viewCenter.y));
   }
 
   // Cursor-centered zoom: the km point currently under (px, py) stays under
@@ -340,9 +349,9 @@ export function createRenderer(canvas) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, wCss, hCss);
 
-    // water / ground -- fills the full-bleed canvas, including any margin
-    // beyond the domain (visible when zoomed out on a wide viewport, or
-    // panned past the data)
+    // water / ground -- fills the full-bleed canvas. With cover-fit + the
+    // tight pan clamp the visible area is always inside the domain, so this
+    // never shows as a dead band; it is the ground under the heat layer.
     ctx.fillStyle = theme.water;
     ctx.fillRect(0, 0, wCss, hCss);
 

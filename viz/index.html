@@ -3046,9 +3046,9 @@ function createRenderer(canvas) {
   let hCss = 0; // css px
   let dpr = 1;
 
-  const MIN_ZOOM = 1;
+  const MIN_ZOOM = 1; // 1x = cover-fit: domain covers the viewport
   const MAX_ZOOM = 8;
-  let viewScale = 1; // 1x = current full-domain fit
+  let viewScale = 1;
   let viewCenter = { x: 0, y: 0 }; // km, domain point at canvas center
 
   function resize() {
@@ -3062,9 +3062,10 @@ function createRenderer(canvas) {
       canvas.width = pw;
       canvas.height = ph;
     }
+    clampCenter();
   }
 
-  const pxPerKmNow = () => (Math.min(wCss, hCss) / DOMAIN) * viewScale;
+  const pxPerKmNow = () => (Math.max(wCss, hCss) / DOMAIN) * viewScale;
 
   const kmToCss = (x, y) => {
     const s = pxPerKmNow();
@@ -3084,9 +3085,12 @@ function createRenderer(canvas) {
   };
 
   function clampCenter() {
-    const margin = HALF_EXTENT * 1.3;
-    viewCenter.x = Math.max(-margin, Math.min(margin, viewCenter.x));
-    viewCenter.y = Math.max(-margin, Math.min(margin, viewCenter.y));
+    const s = pxPerKmNow();
+    if (!(s > 0)) return; // pre-layout: nothing to clamp against yet
+    const playX = Math.max(0, HALF_EXTENT - wCss / (2 * s));
+    const playY = Math.max(0, HALF_EXTENT - hCss / (2 * s));
+    viewCenter.x = Math.max(-playX, Math.min(playX, viewCenter.x));
+    viewCenter.y = Math.max(-playY, Math.min(playY, viewCenter.y));
   }
 
   function setZoomAt(px, py, targetScale) {
