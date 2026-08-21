@@ -929,6 +929,17 @@ export function createRenderer(canvas) {
     return best;
   }
 
+  // Raw view accessors, for callers that tween the camera themselves (the
+  // mobile story animates between frameWindow fits): read the view, restore
+  // it, interpolate zoom linearly (log-space scale) and the center in world
+  // units, calling setView per frame. setView clamps like every other path.
+  const getView = () => ({ wx: viewCenter.wx, wy: viewCenter.wy, zoom });
+  function setView(v) {
+    zoom = v.zoom;
+    viewCenter = { wx: v.wx, wy: v.wy };
+    clampView();
+  }
+
   return {
     resize,
     refreshTheme,
@@ -948,6 +959,8 @@ export function createRenderer(canvas) {
     setZoomAt,
     zoomBy,
     panBy,
+    getView,
+    setView,
     resetView: frameWindow,
     frameWindow,
     // tiles
