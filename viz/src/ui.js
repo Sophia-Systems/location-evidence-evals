@@ -370,6 +370,7 @@ export function buildApp(root) {
         };
       }),
       declared: sim.declared,
+      declaredSolid: true,
       truth: state.revealTruth ? sim.trueLocation : null,
       labels: true,
     };
