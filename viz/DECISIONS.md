@@ -602,3 +602,63 @@ following those.
     beats sending them to a desktop-only page); the desktop link is
     secondary. The declaration card also drops its "Before any
     measurements..." sentence.
+
+## v5: vector tile basemap
+
+50. **Vector tiles replace the raster basemap; the style is the page's own.**
+    *(Adjudicated by John: "the main should be nice vector tiles, fallback you
+    shouldn't have to touch.")* Supersedes item 35's raster choice. The source
+    is Carto's `carto.streets` MVT tileset (`tiles-{a-d}.basemaps.cartocdn.com`,
+    z0-14) decoded by a new dependency-free `src/vector-tiles.js`: a ~200-line
+    protobuf reader, the geometry command-stream walker, and a style table.
+    The no-dependency single-file build stands -- MapLibre GL was never an
+    option under it, and the slice of the format this needs is small.
+
+    The point is not sharpness, it is CONTROL. Raster tiles arrive
+    pre-colored, so item 35's basemap was Positron's palette in light and Dark
+    Matter's in dark, and the viz had to accept both. Vector tiles carry
+    geometry only, so `STYLE.light` / `STYLE.dark` derive the whole basemap
+    from the page's own tokens -- warm paper and green-black, the same
+    quiet the rest of the bench is quiet in. A theme flip is now a repaint,
+    not a second tile fetch. Labels render in the page's UI typeface (the
+    source's SDF glyph PBFs are deliberately not loaded), which is why they
+    match the bench's type rather than sitting inside the image.
+
+    Three calls worth recording, each caught in the browser:
+    (a) **Water is fill-only, never stroked.** Tile polygons arrive clipped to
+    the tile bounds, so a ring carries artificial edges along the boundary;
+    stroking them painted a straight line down every seam in the viewport.
+    The shoreline is instead the land/sea tonal step, which is why that pair
+    sits a clear step apart. Positron does the same -- its water layer has no
+    outline anywhere.
+    (b) **Every style pass runs across all visible tiles before the next.**
+    Drawing tile-by-tile lets a neighbour's road casing overdraw the fill an
+    earlier tile already painted, leaving dark stubs at each seam.
+    (c) **Labels are gated far above a general-purpose basemap's thresholds.**
+    The map's subject is the probability field, so place names are orientation
+    furniture only. `capital` is graded rather than boolean (2 national, 4
+    regional): promoting every `capital > 0` pulled every county seat onto a
+    continental view. Country `rank` does not separate size cleanly either --
+    rank 3 holds Netherlands and Estonia beside Monaco and San Marino -- but
+    rank 5+ is unambiguously the Jersey / Isle of Man tier.
+
+    Roads are motorway and trunk only until z8, each fading in over the zoom
+    unit above its threshold so a class never pops on at full weight.
+
+    **The offline fallback is untouched**, as directed: `map-data.js`, the
+    inlined coastlines/borders, `MAJOR_CITIES`, and `drawCities` are all
+    unchanged, and `isOffline()` keeps the raster layer's exact contract
+    (first failure with zero successes flips to fallback; one later success
+    clears it for good). Browser-verified against a dead tile host.
+
+51. **build.mjs's fetch ban narrows to a budget.** MVT tiles are
+    ArrayBuffers, so the vector basemap must `fetch` them -- the raster layer
+    could use `new Image()`, which is why the blanket ban held until now.
+    Dropping the check outright would have given up a real guarantee, so it
+    is replaced by: exactly ONE fetch call site, and it must be the tile
+    fetch. Combined with the unchanged URL whitelist (every http(s) literal in
+    the bundle points at the tile host), a lone fetch cannot reach anywhere
+    else -- there is no other absolute URL in the file for it to build. The
+    tile host and path are kept as literals in the URL template for exactly
+    this reason: the whitelist works by inspection, and a host assembled from
+    variables would defeat it.
