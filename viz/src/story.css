@@ -161,22 +161,6 @@ body {
   transform: translateY(0);
 }
 
-.story-eyebrow {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 6px;
-}
-
-.story-eyebrow .n {
-  color: var(--ink-faint);
-}
-
 .story-card h1 {
   font-size: 22px;
   line-height: 1.25;
@@ -235,15 +219,6 @@ body {
 }
 
 /* ---- intro extras -------------------------------------------------------- */
-
-.story-kicker {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-bottom: 8px;
-}
 
 .scroll-cue {
   display: block;

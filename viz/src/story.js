@@ -20,7 +20,8 @@
 // the end.
 
 import { createEngine } from "./engine.js";
-import { createRenderer, computeViewFit } from "./render.js";
+import { createRenderer } from "./render.js";
+import { lonToWorldX, latToWorldY } from "./geo.js";
 
 // Story timing
 const FIELD_MS = 400; // posterior tween, matches the bench's feel
@@ -49,23 +50,27 @@ const BASE_STAGE = [
   STORY_LOC.paris,
   STORY_LOC.london,
 ];
-const EVASIVE_STAGE = [
+// Framed with the actual location included in BOTH false-declaration steps:
+// the point of those steps is where the mass settles, so the region east of
+// the declared location must be on-screen before the reveal too.
+const EVASIVE_TRUTH = [
   STORY_LOC.tallinn,
   STORY_LOC.helsinki,
   STORY_LOC.hamina,
   STORY_LOC.stockholm,
+  STORY_LOC.stPetersburg,
 ];
-const EVASIVE_TRUTH = [...EVASIVE_STAGE, STORY_LOC.stPetersburg];
 
 // ---------------------------------------------------------------------------
-// The script. Each step: card copy, cumulative engine stages (delay ms from
-// step activation), the camera frame, and whether truth is revealed.
+// The script. Each step: a short label (aria/progress only -- no on-card
+// eyebrow), card copy, cumulative engine stages (delay ms from step
+// activation), the camera frame, and whether the actual location is shown.
 // ---------------------------------------------------------------------------
 
 const STEPS = [
   {
     id: "claim",
-    eyebrow: "the claim",
+    label: "the declaration",
     frame: BASE_STAGE,
     reveal: false,
     stages: [
@@ -78,14 +83,14 @@ const STEPS = [
       },
     ],
     card: `
-      <div class="story-kicker">location verification &middot; evidence evaluation</div>
-      <h1>A machine declares its location: Cambridge.</h1>
-      <p>The goal is to check that claim from network measurements alone,
-      without trusting the operator&rsquo;s word. The ringed marker is the
-      declared location. The colored overlay is the probability distribution
-      over where the machine actually is &mdash; uniform until there is
-      evidence. The green dots are <strong>anchors</strong>: machines at
-      known locations that take the measurements.</p>
+      <h1>An operator declares a device&rsquo;s location: Cambridge.</h1>
+      <p>The aim is to evaluate that declaration from network measurements,
+      without relying on the operator&rsquo;s word. The ringed marker is the
+      declared location; the colored overlay is a probability distribution
+      over the device&rsquo;s location &mdash; uniform until there is
+      evidence.</p>
+      <p>The green dots are <strong>anchors</strong>: machines at known
+      locations that take the measurements.</p>
       <svg class="scroll-cue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round"/>
@@ -93,23 +98,21 @@ const STEPS = [
   },
   {
     id: "receipt",
-    eyebrow: "one measurement",
+    label: "one measurement",
     frame: BASE_STAGE,
     reveal: false,
     stages: [{ delay: 250, fn: (e) => e.probe("hetzner-helsinki", 0) }],
     card: `
       <h2>One signed measurement</h2>
       <p>The Helsinki anchor sends a probe and times the round trip; the
-      reply is signed, making the timing a <strong>receipt</strong>. Signal
-      propagation speed is bounded, so one round-trip time bounds the
-      machine&rsquo;s distance from the anchor.</p>
-      <p>Locations beyond that radius are excluded. Locations inside it stay
-      roughly equally plausible &mdash; the receipt narrows the distribution
-      without picking a point.</p>`,
+      signed reply makes the timing a <strong>receipt</strong>. Signal
+      propagation speed is bounded, so a round-trip time bounds the
+      device&rsquo;s distance from the anchor: locations beyond that bound
+      are excluded.</p>`,
   },
   {
     id: "geometry",
-    eyebrow: "geometry",
+    label: "several directions",
     frame: BASE_STAGE,
     reveal: false,
     stages: [
@@ -119,40 +122,15 @@ const STEPS = [
     ],
     card: `
       <h2>Measurements from several directions</h2>
-      <p>Anchors in Falkenstein, Paris, and London probe the same machine.
-      Each receipt excludes the region beyond its own radius, and the
+      <p>Anchors in Falkenstein, Paris, and London probe the same device.
+      Each receipt excludes the region beyond its own bound, and the
       intersection that remains is small: the distribution concentrates near
-      Cambridge.</p>
-      <p>The concentration comes entirely from exclusion &mdash; no anchor
-      measured the location directly.</p>`,
+      Cambridge.</p>`,
   },
   {
-    id: "trust",
-    eyebrow: "trust",
-    frame: BASE_STAGE,
-    reveal: false,
-    stages: [
-      {
-        delay: 250,
-        fn: (e) => {
-          for (const a of e.getAnchors()) e.setAnchorPi(a.id, 0.3);
-        },
-      },
-    ],
-    card: `
-      <h2>Evidence is weighted by anchor trust</h2>
-      <p>Each anchor carries a compromise probability: the chance it would
-      sign fabricated receipts. Here it is raised from 2% to 30% for every
-      anchor. The receipts are unchanged, but each proves less &mdash;
-      fabrication now partly explains it &mdash; and the distribution
-      spreads.</p>
-      <p>The strength of an assessment depends on how independent the anchors
-      are, not only on how many receipts they sign.</p>`,
-  },
-  {
-    id: "lie",
-    eyebrow: "a false claim",
-    frame: EVASIVE_STAGE,
+    id: "false-claim",
+    label: "a false declaration",
+    frame: EVASIVE_TRUTH,
     reveal: false,
     stages: [
       {
@@ -168,30 +146,26 @@ const STEPS = [
     ],
     card: `
       <h2>A false declaration</h2>
-      <p>This machine declares <strong>Tallinn</strong> but is somewhere
-      else. It delays each reply by the amount that would make its round-trip
-      times consistent with Tallinn.</p>
-      <p>Added delay can only lengthen a measurement, never shorten it, so
-      the receipts cannot all be made consistent with the declared location.
-      The distribution does not concentrate on Tallinn.</p>`,
+      <p>This operator declares a device is in <strong>Tallinn</strong>; the
+      device is elsewhere. The anchors probe it and the evaluation runs as
+      before.</p>
+      <p>The distribution concentrates away from the declared location.</p>`,
   },
   {
-    id: "detection",
-    eyebrow: "detection",
+    id: "result",
+    label: "the result",
     frame: EVASIVE_TRUTH,
     reveal: true,
     stages: [],
     card: `
-      <h2>The declaration is falsified</h2>
-      <p>The machine is in <strong>St Petersburg</strong>. Padding moves an
-      apparent position farther from an anchor, never closer, so no padding
-      schedule satisfies every anchor at once. The distribution concentrated
-      near the actual location rather than the declared one: the false claim
-      is detectable from the receipts alone.</p>
-      <p class="aside">This holds when the anchors are independent and the
-      verifier&rsquo;s allowance for the machine&rsquo;s processing time is
-      set conservatively. The full demo lets you vary both and watch the
-      assessment degrade.</p>
+      <h2>The declaration is improbable</h2>
+      <p>The device is actually in <strong>St Petersburg</strong>. In this
+      simulation, the assessment places most of the probability mass near the
+      actual location and comparatively little at the declared one.</p>
+      <p>That does not disprove the declaration &mdash; it makes it
+      improbable, which is grounds to flag it for scrutiny.</p>
+      <p class="aside">This page is a simplified, illustrative simulation.
+      The full demo exposes the model&rsquo;s parameters and assumptions.</p>
       <div class="story-links">
         <a class="primary" href="./index.html?full">Explore the full demo (desktop)</a>
         <a class="secondary" href="https://johnx.co/research">About this research</a>
@@ -213,7 +187,6 @@ function buildStory(root) {
         (s, i) => `
       <section class="story-step" data-step="${i}">
         <div class="story-card">
-          <div class="story-eyebrow"><span class="n">${String(i + 1).padStart(2, "0")} / ${String(STEPS.length).padStart(2, "0")}</span> ${s.eyebrow}</div>
           ${s.card}
           ${
             i < STEPS.length - 1
@@ -227,7 +200,7 @@ function buildStory(root) {
     <nav class="story-rail" aria-label="story progress">
       ${STEPS.map(
         (s, i) =>
-          `<button data-goto="${i}" aria-label="step ${i + 1}: ${s.eyebrow}"></button>`
+          `<button data-goto="${i}" aria-label="step ${i + 1}: ${s.label}"></button>`
       ).join("")}
     </nav>
   </div>`;
@@ -391,8 +364,12 @@ function buildStory(root) {
   // The step card floats over the bottom of the viewport, so the fit runs on
   // the unobstructed top region (same idea as the bench's obstructRight for
   // its parameters column, turned vertical) and the framed stage is centered
-  // there. Uses the CURRENT engine window center -- callers must apply a
-  // step's state (in particular a preset's window recenter) before framing.
+  // there. A plain bbox frame fit with a fixed margin -- deliberately NOT
+  // computeViewFit: its boundary-cover clamp zooms in until the evaluation
+  // window's edge leaves the screen, which on a narrow viewport compressed
+  // the margin to zero and cropped the easternmost framed point (the actual
+  // location in the false-declaration steps). The story's framings sit well
+  // inside the window, so the clamp buys nothing here.
   function frameTargetView(points, stepIndex) {
     renderer.resize();
     const rect = canvas.getBoundingClientRect();
@@ -402,15 +379,34 @@ function buildStory(root) {
     const card = sections[stepIndex]?.querySelector(".story-card");
     const obstruct = card ? card.offsetHeight + 40 : 0;
     const effH = Math.max(hCss - obstruct, hCss * 0.4);
-    const fit = computeViewFit(wCss, effH, engine.getWindowCenter(), points, null);
-    const zoom = Math.log2(fit.scale);
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of points) {
+      const wx = lonToWorldX(p.lon);
+      const wy = latToWorldY(p.lat);
+      if (wx < x0) x0 = wx;
+      if (wy < y0) y0 = wy;
+      if (wx > x1) x1 = wx;
+      if (wy > y1) y1 = wy;
+    }
+    const MARGIN = 0.14; // per side, fraction of the framed region
+    const bw = Math.max(x1 - x0, 1e-9);
+    const bh = Math.max(y1 - y0, 1e-9);
+    const scale = Math.min((wCss * (1 - 2 * MARGIN)) / bw, (effH * (1 - 2 * MARGIN)) / bh);
+    const zoom = Math.log2(scale);
     const s = Math.pow(2, zoom);
     const saved = renderer.getView();
     // Center the stage in the unobstructed top region: worldToCss puts wy at
-    // css y = hCss/2 + (wy - viewCenter.wy) * s, and we want fit.cy at
-    // effH/2, so viewCenter.wy = fit.cy + (hCss - effH) / (2s). setView
+    // css y = hCss/2 + (wy - viewCenter.wy) * s, and we want the bbox center
+    // at effH/2, so viewCenter.wy = cy + (hCss - effH) / (2s). setView
     // clamps zoom and center exactly like every renderer path.
-    renderer.setView({ wx: fit.cx, wy: fit.cy + (hCss - effH) / (2 * s), zoom });
+    renderer.setView({
+      wx: (x0 + x1) / 2,
+      wy: (y0 + y1) / 2 + (hCss - effH) / (2 * s),
+      zoom,
+    });
     const target = renderer.getView();
     renderer.setView(saved);
     return target;

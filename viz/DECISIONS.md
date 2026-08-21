@@ -518,3 +518,25 @@ following those.
     index.html redirects viewports <= 760 px to the story; `?full` is the
     escape hatch, and the story's own "full demo" link uses it so the pages
     never bounce.
+
+45. **Story pared to five calibrated steps.** *(Adjudicated by John,
+    reviewing item 44's build.)* Directions applied: eyebrows and the kicker
+    removed (cards open with their heading; the progress rail alone carries
+    position); the OPERATOR declares, the DEVICE is measured -- wording fixed
+    throughout; the "locations inside stay roughly equally plausible" claim
+    cut (it contradicts the on-screen ring-shaped interior); the trust beat
+    REMOVED entirely (anchor trust is not a concept the mobile story should
+    introduce); the padding/inflation mechanism no longer narrated in the
+    false-declaration beat (the story shows only that probability mass
+    settles away from the declared location -- lacing in the latency nuance
+    was judged a mistake); and the closing claim recalibrated from "the
+    declaration is falsified" to "the declaration is improbable ... grounds
+    to flag it for scrutiny," with an explicit "simplified, illustrative
+    simulation" aside -- John's standing rule: never overstate; humble,
+    accurate, understated language over persuasion. Framing fix recorded
+    with it: both false-declaration steps frame the ACTUAL location too, and
+    the story's camera fit dropped computeViewFit's boundary-cover clamp
+    (which compressed margins to zero on narrow viewports and cropped the
+    truth crosshair) for a plain bbox frame fit at a fixed margin -- the
+    story's framings sit well inside the window, so the clamp bought
+    nothing.
