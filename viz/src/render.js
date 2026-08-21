@@ -1,8 +1,9 @@
 // render.js -- canvas rendering for the evidence-evaluation viz.
 //
 // v2 display plane: a hand-rolled global Web Mercator slippy map. Owns the
-// view transform (wheel-zoom ~z2..z10, drag-pan anywhere on Earth), the tile
-// basemap (Carto Positron light/dark, LRU cache, blank-on-404), the inlined
+// view transform (wheel-zoom ~z2..z10, drag-pan anywhere on Earth), the
+// vector tile basemap (MVT geometry decoded by vector-tiles.js and styled
+// here from the page's own theme tokens, LRU cache), the inlined
 // vector geography (offline fallback + placeholder while tiles load), the
 // probability field (rasterized once per posterior update into an offscreen
 // canvas in Mercator world space covering the evaluation window, then
@@ -26,8 +27,16 @@ import {
 } from "./geo.js";
 import { COAST, BORDERS, CITIES, decodePolylines } from "./map-data.js";
 import { RAMPS } from "./ramps.js";
+import { createTileSource, STYLE, TILE_MAX_ZOOM } from "./vector-tiles.js";
 
 const EARTH_CIRC_KM = 40075.017; // equatorial circumference, km
+
+// Basemap road classes, drawn in this order (widest first). Each fades in
+// over the zoom unit above the zoom its geometry starts arriving at, so a
+// whole road class never pops onto the map at full weight.
+const ROAD_CLASSES = ["motorway", "trunk", "primary", "secondary"];
+const ROAD_FADE_IN = { motorway: 5, trunk: 6, primary: 8, secondary: 10 };
+const LABEL_FONT = "'Avenir Next', 'Seravek', ui-sans-serif, system-ui, sans-serif";
 
 // ---------------------------------------------------------------------------
 // Default-view fit (DECISIONS.md item 42, superseding item 41's rule).
@@ -130,7 +139,7 @@ export function createRenderer(canvas) {
 
   // ---- theme ---------------------------------------------------------------
   let theme = {};
-  let tileStyle = "light_all";
+  let mapStyle = STYLE.light;
   function refreshTheme() {
     const cs = getComputedStyle(document.body);
     const v = (name, fallback) => (cs.getPropertyValue(name) || fallback).trim();
@@ -144,12 +153,12 @@ export function createRenderer(canvas) {
       warn: v("--warn", "#b3591e"),
       halo: v("--surface", "#faf9f5"),
     };
-    // Carto style follows the page theme: Positron for light, dark_all for
-    // dark. The tile cache is keyed by style, so a theme flip just fetches
-    // (or re-uses) the other set.
-    tileStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark_all"
-      : "light_all";
+    // The basemap style follows the page theme. Vector tiles carry geometry
+    // only, so this is a pure repaint -- no refetch, no second tile set, and
+    // the palette is the page's own rather than a vendor's.
+    mapStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? STYLE.dark
+      : STYLE.light;
   }
   refreshTheme();
 
@@ -421,16 +430,11 @@ export function createRenderer(canvas) {
   const coastPath = buildWorldPath(COAST);
   const borderPath = buildWorldPath(BORDERS);
 
-  // ---- tile layer -----------------------------------------------------------
-  // Carto Positron light_all / dark_all @2x with subdomain rotation, an LRU
-  // cache, and blank-on-404 (the vector layer shows through). Offline is
-  // detected from the first failure with zero successes; a single later
-  // success clears it for good.
-  const TILE_CACHE_MAX = 400;
-  const tileCache = new Map(); // key -> {img, loaded, failed}
-  const SUBDOMAINS = "abcd";
-  let tileOk = 0;
-  let tileFail = 0;
+  // ---- vector tile layer ----------------------------------------------------
+  // Carto's carto.streets MVT source, decoded and drawn by vector-tiles.js.
+  // Offline detection keeps the raster layer's contract: the first failure
+  // with zero successes flips to the inlined-geography fallback, and a single
+  // later success clears it for good.
   let onRedraw = null;
   let redrawPending = false;
 
@@ -447,71 +451,184 @@ export function createRenderer(canvas) {
     });
   }
 
-  const isOffline = () => tileFail > 0 && tileOk === 0;
+  const tiles = createTileSource({ onTileReady: scheduleRedraw });
+  const isOffline = () => tiles.isOffline();
 
-  function getTile(style, z, x, y) {
-    const key = `${style}/${z}/${x}/${y}`;
-    let entry = tileCache.get(key);
-    if (entry) {
-      tileCache.delete(key); // LRU refresh
-      tileCache.set(key, entry);
-      return entry;
-    }
-    entry = { img: null, loaded: false, failed: false };
-    tileCache.set(key, entry);
-    if (tileCache.size > TILE_CACHE_MAX) {
-      for (const [k, e] of tileCache) {
-        if (e.loaded || e.failed) {
-          tileCache.delete(k);
-          break;
-        }
-      }
-    }
-    const sub = SUBDOMAINS[Math.abs(x + y) % SUBDOMAINS.length];
-    const img = new Image();
-    img.onload = () => {
-      entry.loaded = true;
-      tileOk++;
-      scheduleRedraw();
-    };
-    img.onerror = () => {
-      entry.failed = true;
-      const wasOffline = isOffline();
-      tileFail++;
-      if (!wasOffline && isOffline()) scheduleRedraw(); // flip to fallback promptly
-    };
-    img.src = `https://${sub}.basemaps.cartocdn.com/${style}/${z}/${x}/${y}@2x.png`;
-    entry.img = img;
-    return entry;
-  }
-
-  function drawTiles() {
-    const tileZ = Math.max(0, Math.min(MAX_ZOOM, Math.round(zoom)));
-    const tilesAcross = Math.pow(2, tileZ);
-    const span = WORLD / tilesAcross; // world units per tile
+  // The tiles covering the viewport at the current zoom, as
+  // {tile, wx, wy, span} in world units. `wx` is the UNWRAPPED origin so a
+  // tile fetched from the wrapped column still draws in the right place.
+  function visibleTiles() {
+    const tileZ = Math.max(0, Math.min(TILE_MAX_ZOOM, Math.round(zoom)));
+    const across = Math.pow(2, tileZ);
+    const span = WORLD / across;
     const [w0x, w0y] = cssToWorld(0, 0);
     const [w1x, w1y] = cssToWorld(wCss, hCss);
     const txMin = Math.floor(w0x / span);
     const txMax = Math.floor(w1x / span);
     const tyMin = Math.max(0, Math.floor(w0y / span));
-    const tyMax = Math.min(tilesAcross - 1, Math.floor(w1y / span));
+    const tyMax = Math.min(across - 1, Math.floor(w1y / span));
+    const out = [];
     for (let ty = tyMin; ty <= tyMax; ty++) {
       for (let tx = txMin; tx <= txMax; tx++) {
-        const wrapped = ((tx % tilesAcross) + tilesAcross) % tilesAcross;
-        const tile = getTile(tileStyle, tileZ, wrapped, ty);
-        if (!tile.loaded) continue;
-        const [px0, py0] = worldToCss(tx * span, ty * span);
-        const [px1, py1] = worldToCss((tx + 1) * span, (ty + 1) * span);
-        // a hair of overlap avoids seams from rounding
-        ctx.drawImage(
-          tile.img,
-          Math.floor(px0),
-          Math.floor(py0),
-          Math.ceil(px1 - px0) + 1,
-          Math.ceil(py1 - py0) + 1
-        );
+        const wrapped = ((tx % across) + across) % across;
+        const entry = tiles.get(tileZ, wrapped, ty);
+        if (entry.state !== "ready") continue;
+        out.push({ t: entry.tile, wx: (tx - wrapped) * span, wy: 0, span });
       }
     }
+    return out;
+  }
+
+  // Draw one style pass across ALL visible tiles before moving to the next.
+  // Passing per-tile instead would let a neighbour's road casing overdraw the
+  // road fill this tile already painted, leaving dark stubs at every seam --
+  // tile geometry carries a buffer beyond the tile edge precisely so adjacent
+  // tiles agree there, and drawing by layer is what makes that agreement show.
+  function drawVectorTiles() {
+    const list = visibleTiles();
+    if (!list.length) return;
+    const s = scaleNow();
+    const m = mapStyle;
+
+    ctx.save();
+    ctx.translate(wCss / 2 - viewCenter.wx * s, hCss / 2 - viewCenter.wy * s);
+    ctx.scale(s, s);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    // Loaded tiles paint their own opaque ground, so the inlined vector
+    // geography beneath keeps showing wherever a tile has not arrived yet.
+    ctx.fillStyle = m.land;
+    for (const { wx, wy, span } of list) {
+      // a hair of overlap avoids hairline seams between neighbours
+      ctx.fillRect(wx, wy, span * 1.002, span * 1.002);
+    }
+
+    const forEachPath = (get, fn) => {
+      for (const item of list) {
+        const path = get(item.t);
+        if (!path) continue;
+        ctx.save();
+        ctx.translate(item.wx, item.wy);
+        fn(path);
+        ctx.restore();
+      }
+    };
+
+    // green (parks, woodland) sits directly on the land ground
+    ctx.fillStyle = m.green;
+    forEachPath((t) => t.green, (p) => ctx.fill(p, "nonzero"));
+
+    // water: fill only -- see the note in vector-tiles.js on why the
+    // shoreline is a tonal step and not a stroke
+    ctx.fillStyle = m.sea;
+    forEachPath((t) => t.water, (p) => ctx.fill(p, "nonzero"));
+
+    ctx.strokeStyle = m.waterway;
+    ctx.lineWidth = 0.7 / s;
+    forEachPath((t) => t.waterway, (p) => ctx.stroke(p));
+
+    // roads: every casing first, then every fill (see the note above)
+    const roadWidth = (cls) => {
+      const base = { motorway: 2.6, trunk: 2.2, primary: 1.7, secondary: 1.2 }[cls];
+      // taper the network in as it appears so a class never pops on at full weight
+      const fade = Math.min(1, Math.max(0, zoom - ROAD_FADE_IN[cls]));
+      return { w: base * fade, on: fade > 0.02 };
+    };
+    for (const cls of ROAD_CLASSES) {
+      const { w, on } = roadWidth(cls);
+      if (!on) continue;
+      ctx.strokeStyle = m.roadCase;
+      ctx.lineWidth = (w + 1.1) / s;
+      forEachPath((t) => t.roads[cls], (p) => ctx.stroke(p));
+    }
+    for (const cls of ROAD_CLASSES) {
+      const { w, on } = roadWidth(cls);
+      if (!on) continue;
+      ctx.strokeStyle = m.roadFill;
+      ctx.lineWidth = w / s;
+      forEachPath((t) => t.roads[cls], (p) => ctx.stroke(p));
+    }
+
+    // boundaries last of the linework, so they read over everything
+    ctx.strokeStyle = m.boundaryState;
+    ctx.lineWidth = 0.7 / s;
+    ctx.globalAlpha = 0.8;
+    ctx.setLineDash([3 / s, 3 / s]);
+    forEachPath((t) => t.boundaryState, (p) => ctx.stroke(p));
+    ctx.setLineDash([]);
+    ctx.strokeStyle = m.boundary;
+    ctx.lineWidth = 1.1 / s;
+    ctx.globalAlpha = 1;
+    forEachPath((t) => t.boundary, (p) => ctx.stroke(p));
+
+    ctx.restore();
+  }
+
+  // Place labels from the tiles, drawn ABOVE the heat wash for legibility --
+  // the same call the offline city labels get, and for the same reason. Names
+  // render in the page's own UI typeface: the source's glyph atlases are SDF
+  // PBFs we deliberately do not load.
+  function drawTileLabels() {
+    const list = visibleTiles();
+    if (!list.length) return;
+    const s = scaleNow();
+    const cands = [];
+    const seen = new Set();
+    for (const item of list) {
+      for (const l of item.t.labels) {
+        if (zoom < l.minZoom) continue;
+        if (seen.has(l.name)) continue; // tile buffers repeat names at seams
+        const px = wCss / 2 + (l.wx + item.wx - viewCenter.wx) * s;
+        const py = hCss / 2 + (l.wy + item.wy - viewCenter.wy) * s;
+        if (px < -60 || px > wCss + 60 || py < -20 || py > hCss + 20) continue;
+        seen.add(l.name);
+        cands.push({ ...l, px, py });
+      }
+    }
+    // most prominent first, so decluttering drops the minor names
+    cands.sort((a, b) => a.minZoom - b.minZoom || a.rank - b.rank);
+
+    ctx.save();
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    const placed = [];
+    for (const l of cands) {
+      const isCountry = l.cls === "country";
+      const size = isCountry ? 11 : l.cls === "state" ? 10 : l.capital > 0 ? 11 : 10;
+      ctx.font = `${isCountry ? 600 : 500} ${size}px ${LABEL_FONT}`;
+      const dot = l.cls === "city" || l.cls === "town";
+      ctx.textAlign = dot ? "left" : "center";
+      const w = ctx.measureText(l.name).width;
+      const tx = dot ? l.px + 6 : l.px;
+      const x0 = dot ? tx : tx - w / 2;
+      const box = [x0 - 2, l.py - size * 0.7, x0 + w + 2, l.py + size * 0.7];
+      let clash = false;
+      for (const r of placed) {
+        if (box[0] < r[2] && box[2] > r[0] && box[1] < r[3] && box[3] > r[1]) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      placed.push(box);
+      if (dot) {
+        ctx.beginPath();
+        ctx.arc(l.px, l.py, l.capital > 0 ? 2.6 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = mapStyle.label;
+        ctx.fill();
+      }
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = mapStyle.labelHalo;
+      ctx.fillStyle = mapStyle.label;
+      if (isCountry) {
+        ctx.letterSpacing = "0.06em";
+      }
+      ctx.strokeText(l.name, tx, l.py);
+      ctx.fillText(l.name, tx, l.py);
+      ctx.letterSpacing = "0px";
+    }
+    ctx.restore();
   }
 
   // ---- overlay helpers -----------------------------------------------------
@@ -668,9 +785,9 @@ export function createRenderer(canvas) {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    // tile basemap over the vector layer (loaded tiles cover it; failed or
-    // pending tiles leave it showing)
-    if (!offline) drawTiles();
+    // vector tile basemap over the inlined layer (loaded tiles paint their
+    // own ground and cover it; failed or pending tiles leave it showing)
+    if (!offline) drawVectorTiles();
 
     // probability field: the heat offscreen covers exactly the window's
     // Mercator bbox, blitted through the view transform. Smoothing stays on
@@ -692,11 +809,12 @@ export function createRenderer(canvas) {
       ctx.restore();
     }
 
-    // offline fallback only: major-city dots + labels for orientation (tiles
-    // carry their own labels; never double-label). Drawn above the heat wash
-    // so they stay legible -- they are orientation furniture, like the
-    // window boundary. Greedy label decluttering.
+    // place labels, drawn above the heat wash so they stay legible -- they
+    // are orientation furniture, like the window boundary. Online they come
+    // from the tiles' `place` layer; offline, from the inlined MAJOR_CITIES
+    // set. Never both: one source of names, so nothing is double-labelled.
     if (offline) drawCities();
+    else drawTileLabels();
 
     // window boundary: the region under evaluation, quiet but present
     drawWindowBoundary(scene.labels);
