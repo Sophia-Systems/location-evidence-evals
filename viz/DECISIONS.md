@@ -186,3 +186,18 @@ following those.
     The legend's floor copy now states that residual outside brightness is set
     by anchor trust, not physics. A numeric test pins the single-anchor
     peak/outside posterior ratio to ~1/pi at both 0.02 and 0.10.
+
+## Phase 4 (rework): full-bleed layout, pan/zoom, finer geography
+
+27. **Hand-added anchor trust inheritance.** *(Adjudicated by John.)*
+    PROMPT.md/Phase 1-3 had every anchor added via the facility library or
+    map click default to neutral pi = 0.10, regardless of scenario. John: a
+    hand-added anchor should read as part of the loaded scenario, not
+    silently dilute it with a neutral-trust outlier next to a staged
+    high-trust set (or vice versa). Adjudication: new anchors inherit the
+    loaded preset's trust staging -- HIGH_TRUST_PI (0.02) in presets 1/2/4
+    (baseline, geometry, allowance -- the erasure lessons), neutral 0.10 in
+    presets 3/5 (trust, evasive) and in any non-preset (free-play) state. An
+    explicit `pi` passed to `addAnchor` still overrides inheritance. Engine
+    tracks this as `defaultAnchorPi`, set in `loadPreset`; exposed as
+    `getDefaultAnchorPi()` for the UI and tests.

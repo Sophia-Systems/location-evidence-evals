@@ -265,6 +265,15 @@ export function createEngine(options = {}) {
   const anchors = new Map();
   let anchorSeq = 0;
 
+  // Default pi for hand-added anchors (facility library or map click),
+  // per user adjudication (see viz/DECISIONS.md): a hand-added anchor should
+  // read as part of the loaded scenario, not silently dilute it with a
+  // neutral-trust outlier. Tracks the loaded preset's trust staging -- the
+  // erasure presets (baseline/geometry/allowance) stage HIGH_TRUST_PI; the
+  // trust preset and evasive preset (and no-preset free play) stay neutral.
+  let defaultAnchorPi = PI_PRESETS.neutral;
+  const HIGH_TRUST_PRESET_IDS = new Set(["baseline", "geometry", "allowance"]);
+
   function computeDistField(a) {
     const { lats, lons, cellCount } = grid;
     const dist = a.dist && a.dist.length === cellCount ? a.dist : new Float32Array(cellCount);
@@ -295,7 +304,7 @@ export function createEngine(options = {}) {
       name: name ?? id,
       lat,
       lon,
-      pi: clampPi(pi ?? PI_PRESETS.neutral),
+      pi: clampPi(pi ?? defaultAnchorPi),
       dist: null,
       receipts: [],
       S: null,
@@ -758,6 +767,7 @@ export function createEngine(options = {}) {
     if (!preset) throw new Error(`unknown preset: ${presetOrId}`);
     anchors.clear();
     sim.dishonestAnchors.clear();
+    defaultAnchorPi = HIGH_TRUST_PRESET_IDS.has(preset.id) ? HIGH_TRUST_PI : PI_PRESETS.neutral;
     for (const spec of preset.anchors) {
       addAnchor({ facility: spec.facility, pi: spec.pi });
     }
@@ -834,6 +844,7 @@ export function createEngine(options = {}) {
     removeAnchor,
     moveAnchor,
     setAnchorPi,
+    getDefaultAnchorPi: () => defaultAnchorPi,
     getAnchors: () => [...anchors.values()].map(publicAnchor),
     getAnchorDistField: (id) => mustGet(id).dist,
     getAnchorField: (id) => {

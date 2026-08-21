@@ -695,6 +695,37 @@ section("presets");
 }
 
 // ---------------------------------------------------------------------------
+section("hand-added anchor trust inheritance (user adjudication)");
+// ---------------------------------------------------------------------------
+{
+  const eng = createEngine({ seed: 59 });
+  check("no preset loaded: default pi is neutral 0.10", eng.getDefaultAnchorPi() === 0.1);
+
+  for (const id of ["baseline", "geometry", "allowance"]) {
+    eng.loadPreset(id);
+    check(`preset ${id}: default pi for new anchors is 0.02`, eng.getDefaultAnchorPi() === 0.02);
+    const a = eng.addAnchor({ facility: "aws-frankfurt" });
+    check(`preset ${id}: hand-added facility anchor inherits pi 0.02`, Math.abs(a.pi - 0.02) < 1e-9, `got ${a.pi}`);
+    const c = eng.addAnchor({ id: `click-${id}`, name: "clicked", lat: 51, lon: 5 });
+    check(`preset ${id}: hand-added click anchor inherits pi 0.02`, Math.abs(c.pi - 0.02) < 1e-9, `got ${c.pi}`);
+  }
+
+  for (const id of ["trust", "evasive"]) {
+    eng.loadPreset(id);
+    check(`preset ${id}: default pi for new anchors is neutral 0.10`, eng.getDefaultAnchorPi() === 0.1);
+    const have = new Set(eng.getAnchors().map((a) => a.id));
+    const fid = FACILITIES.find((f) => !have.has(f.id)).id;
+    const a = eng.addAnchor({ facility: fid });
+    check(`preset ${id}: hand-added anchor inherits neutral pi 0.10`, Math.abs(a.pi - 0.1) < 1e-9, `got ${a.pi}`);
+  }
+
+  // an explicit pi always wins over inheritance
+  eng.loadPreset("baseline");
+  const explicit = eng.addAnchor({ facility: "aws-dublin", pi: 0.3 });
+  check("explicit pi overrides inheritance", Math.abs(explicit.pi - 0.3) < 1e-9, `got ${explicit.pi}`);
+}
+
+// ---------------------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.log(`failures:\n  - ${failures.join("\n  - ")}`);

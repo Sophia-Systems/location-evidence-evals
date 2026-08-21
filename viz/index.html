@@ -1639,6 +1639,9 @@ function createEngine(options = {}) {
   const anchors = new Map();
   let anchorSeq = 0;
 
+  let defaultAnchorPi = PI_PRESETS.neutral;
+  const HIGH_TRUST_PRESET_IDS = new Set(["baseline", "geometry", "allowance"]);
+
   function computeDistField(a) {
     const { lats, lons, cellCount } = grid;
     const dist = a.dist && a.dist.length === cellCount ? a.dist : new Float32Array(cellCount);
@@ -1669,7 +1672,7 @@ function createEngine(options = {}) {
       name: name ?? id,
       lat,
       lon,
-      pi: clampPi(pi ?? PI_PRESETS.neutral),
+      pi: clampPi(pi ?? defaultAnchorPi),
       dist: null,
       receipts: [],
       S: null,
@@ -2027,6 +2030,7 @@ function createEngine(options = {}) {
     if (!preset) throw new Error(`unknown preset: ${presetOrId}`);
     anchors.clear();
     sim.dishonestAnchors.clear();
+    defaultAnchorPi = HIGH_TRUST_PRESET_IDS.has(preset.id) ? HIGH_TRUST_PI : PI_PRESETS.neutral;
     for (const spec of preset.anchors) {
       addAnchor({ facility: spec.facility, pi: spec.pi });
     }
@@ -2092,6 +2096,7 @@ function createEngine(options = {}) {
     removeAnchor,
     moveAnchor,
     setAnchorPi,
+    getDefaultAnchorPi: () => defaultAnchorPi,
     getAnchors: () => [...anchors.values()].map(publicAnchor),
     getAnchorDistField: (id) => mustGet(id).dist,
     getAnchorField: (id) => {
