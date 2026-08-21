@@ -97,35 +97,30 @@ export function buildApp(root) {
 
   root.innerHTML = `
   <div id="app">
-    <header class="topbar">
-      <div class="brand">
-        <h1><span class="mark">◉</span> Location evidence</h1>
-        <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
-      </div>
-      <div class="presets">
+    <div class="map-pane">
+      <canvas id="map"></canvas>
+
+      <!-- scenario card: top-left, the entry point -- must not get lost -->
+      <section class="card scenario-card">
+        <div class="brand">
+          <h1><span class="mark">◉</span> Location evidence</h1>
+          <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
+        </div>
         <div class="preset-chips" id="preset-chips"></div>
         <div class="preset-caption" id="preset-caption"></div>
-      </div>
-      <div class="top-actions">
-        <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
-        <button class="btn" id="reset-btn" title="return to this preset's initial state">reset</button>
-      </div>
-    </header>
-    <main>
-      <section class="map-pane">
-        <canvas id="map"></canvas>
-        <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
-        <div class="hud">
-          <div class="legend">
-            <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
-            <div class="bar" id="legend-bar"></div>
-            <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
-          </div>
+        <div class="scenario-actions">
+          <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
+          <button class="btn small" id="reset-btn" title="return to this preset's initial state">reset</button>
         </div>
-        <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
-        <div id="map-tip"></div>
       </section>
-      <aside class="controls">
+
+      <!-- parameters column: floating right side, collapsible, scrolls within itself -->
+      <aside class="card params-card" id="params-card">
+        <div class="params-head">
+          <span>parameters</span>
+          <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">‹</button>
+        </div>
+        <div class="params-scroll" id="params-scroll">
         <section class="panel">
           <h2>anchors
             <span class="h-actions">
@@ -223,8 +218,23 @@ export function buildApp(root) {
             </div>
           </details>
         </section>
+        </div>
       </aside>
-    </main>
+
+      <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
+
+      <div class="hud">
+        <button class="btn small view-btn" id="reset-view-btn" type="button" title="reset pan and zoom">⤢ reset view</button>
+        <div class="legend">
+          <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
+          <div class="bar" id="legend-bar"></div>
+          <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
+        </div>
+      </div>
+
+      <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
+      <div id="map-tip"></div>
+    </div>
   </div>`;
 
   const $ = (sel) => root.querySelector(sel);
@@ -984,7 +994,7 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     });
   }
 
-  // ---- top bar ------------------------------------------------------------
+  // ---- scenario card --------------------------------------------------------
 
   $("#reveal-truth").addEventListener("change", (e) => {
     state.revealTruth = e.target.checked;
@@ -992,6 +1002,25 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   });
 
   $("#reset-btn").addEventListener("click", () => loadPreset(state.presetId));
+
+  // ---- parameters column: collapsible (item 1) -----------------------------
+
+  {
+    const card = $("#params-card");
+    const toggle = $("#params-collapse");
+    toggle.addEventListener("click", () => {
+      const collapsed = card.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      toggle.setAttribute("aria-label", collapsed ? "expand parameters" : "collapse parameters");
+    });
+  }
+
+  // ---- view controls: reset pan/zoom (item 2) -------------------------------
+
+  $("#reset-view-btn").addEventListener("click", () => {
+    renderer.resetView();
+    drawScene();
+  });
 
   {
     const chips = $("#preset-chips");

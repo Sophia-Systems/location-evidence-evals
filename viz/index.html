@@ -79,23 +79,71 @@ body {
 }
 
 #app {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   height: 100vh;
   min-width: 1080px;
+  overflow: hidden;
 }
 
-/* ---------- top bar ---------- */
+/* ---------- full-bleed map + floating panels ---------- */
+/* The map canvas reaches all four viewport edges; every control lives in a
+   floating overlay card on top of it (item 1). */
 
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 0 20px;
-  height: 84px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-  flex: none;
+.map-pane {
+  position: absolute;
+  inset: 0;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: default;
+  touch-action: none;
+}
+
+#map.placing {
+  cursor: crosshair;
+}
+
+#map.over-anchor {
+  cursor: pointer;
+}
+
+#map.dragging {
+  cursor: grabbing;
+}
+
+#map.panning {
+  cursor: grab;
+}
+
+/* floating card: shared elevation/material for every overlay panel */
+
+.card {
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* scenario card: top-left, the entry point -- given real weight (title,
+   generous padding) so it reads first against a busy map */
+
+.scenario-card {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 16px 12px;
+  z-index: 6;
 }
 
 .brand h1 {
@@ -111,21 +159,17 @@ body {
   font-size: 11px;
   color: var(--ink-faint);
   margin-top: 1px;
-  white-space: nowrap;
 }
 
 .brand h1 .mark {
   color: var(--accent);
 }
 
-.presets {
-  flex: 1;
-  min-width: 0;
-}
-
 .preset-chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
+  margin-top: 12px;
 }
 
 .chip {
@@ -159,8 +203,7 @@ body {
 .preset-caption {
   font-size: 11.5px;
   color: var(--ink-faint);
-  margin-top: 6px;
-  max-width: 720px;
+  margin-top: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   /* clamp to two lines: long captions (trust-staging notes, preset 5's
@@ -170,63 +213,110 @@ body {
   -webkit-box-orient: vertical;
 }
 
-.top-actions {
+.scenario-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* parameters column: floating right side, collapsible, scrolls within
+   itself -- capped short of the bottom-right corner so it never covers the
+   legend card */
+
+.params-card {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 380px;
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 6;
+}
+
+.params-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--line);
   flex: none;
 }
 
-/* ---------- layout ---------- */
-
-main {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 404px;
-  min-height: 0;
-}
-
-.map-pane {
-  position: relative;
+.collapse-toggle {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-2);
-  min-width: 0;
-  overflow: hidden;
+  transition: transform 160ms var(--ease-out), color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
 }
 
-#map {
-  width: min(100%, 100vh - 84px - 56px);
-  aspect-ratio: 1;
-  max-height: 100%;
-  cursor: default;
-  touch-action: none;
+.collapse-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-#map.placing {
-  cursor: crosshair;
+.params-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-#map.over-anchor {
-  cursor: pointer;
+.params-card.collapsed {
+  max-height: none;
 }
 
-#map.dragging {
-  cursor: grabbing;
+.params-card.collapsed .params-scroll {
+  display: none;
 }
 
-/* map HUD */
+.params-card.collapsed .collapse-toggle {
+  transform: rotate(180deg);
+}
+
+/* map HUD: view-reset control stacked above the legend, bottom-right */
 
 .hud {
   position: absolute;
   right: 16px;
-  top: 14px;
+  bottom: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   align-items: flex-end;
   pointer-events: none;
+  z-index: 5;
+}
+
+.hud .view-btn {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
 }
 
 .legend {
@@ -269,7 +359,7 @@ main {
   position: absolute;
   left: 16px;
   right: 240px;
-  bottom: 12px;
+  bottom: 16px;
   font: 500 10.5px var(--font-mono);
   color: var(--ink-soft);
   background: color-mix(in srgb, var(--card) 82%, transparent);
@@ -282,6 +372,7 @@ main {
   gap: 6px;
   width: fit-content;
   max-width: calc(100% - 250px);
+  z-index: 5;
 }
 
 /* map tooltip */
@@ -300,7 +391,7 @@ main {
   transform: translateY(4px) scale(0.98);
   transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out);
   max-width: 230px;
-  z-index: 5;
+  z-index: 8;
 }
 
 #map-tip.show {
@@ -323,18 +414,6 @@ main {
   margin-top: 4px;
   font-size: 10px;
   color: var(--ink-faint);
-}
-
-/* ---------- sidebar ---------- */
-
-.controls {
-  border-left: 1px solid var(--line);
-  background: var(--surface);
-  overflow-y: auto;
-  padding: 14px 16px 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
 }
 
 .panel {
@@ -596,8 +675,8 @@ button {
 
 /* The popover itself is a single JS-positioned element appended to <body>
    (see ui.js): position: fixed with viewport clamping, so no scrolling or
-   overflow-hidden ancestor (.controls, .map-pane, .legend's backdrop-filter)
-   can ever clip it. */
+   overflow-hidden ancestor (.params-scroll, .map-pane, .legend's
+   backdrop-filter) can ever clip it. */
 
 #info-pop {
   position: fixed;
@@ -1039,6 +1118,7 @@ details.fold .fold-body b {
   opacity: 0;
   transition: opacity 160ms var(--ease-out);
   pointer-events: none;
+  z-index: 7;
 }
 
 .placing-note.show {
@@ -2960,22 +3040,38 @@ function createRenderer(canvas) {
   }
   refreshTheme();
 
-  let sizeCss = 0; // css px, square
+  let wCss = 0; // css px
+  let hCss = 0; // css px
   let dpr = 1;
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 8;
+  let viewScale = 1; // 1x = current full-domain fit
+  let viewCenter = { x: 0, y: 0 }; // km, domain point at canvas center
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    sizeCss = Math.min(rect.width, rect.height);
+    wCss = rect.width;
+    hCss = rect.height;
     dpr = window.devicePixelRatio || 1;
-    const px = Math.max(1, Math.round(sizeCss * dpr));
-    if (canvas.width !== px) {
-      canvas.width = px;
-      canvas.height = px;
+    const pw = Math.max(1, Math.round(wCss * dpr));
+    const ph = Math.max(1, Math.round(hCss * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
     }
   }
 
-  const kmToCss = (x, y) => [((x + HALF_EXTENT) / DOMAIN) * sizeCss, ((HALF_EXTENT - y) / DOMAIN) * sizeCss];
-  const cssToKm = (px, py) => [(px / sizeCss) * DOMAIN - HALF_EXTENT, HALF_EXTENT - (py / sizeCss) * DOMAIN];
+  const pxPerKmNow = () => (Math.min(wCss, hCss) / DOMAIN) * viewScale;
+
+  const kmToCss = (x, y) => {
+    const s = pxPerKmNow();
+    return [wCss / 2 + (x - viewCenter.x) * s, hCss / 2 - (y - viewCenter.y) * s];
+  };
+  const cssToKm = (px, py) => {
+    const s = pxPerKmNow();
+    return [viewCenter.x + (px - wCss / 2) / s, viewCenter.y - (py - hCss / 2) / s];
+  };
   const latLonToCss = (lat, lon) => {
     const p = project(lat, lon);
     return kmToCss(p.x, p.y);
@@ -2984,6 +3080,40 @@ function createRenderer(canvas) {
     const [x, y] = cssToKm(px, py);
     return unproject(x, y);
   };
+
+  function clampCenter() {
+    const margin = HALF_EXTENT * 1.3;
+    viewCenter.x = Math.max(-margin, Math.min(margin, viewCenter.x));
+    viewCenter.y = Math.max(-margin, Math.min(margin, viewCenter.y));
+  }
+
+  function setZoomAt(px, py, targetScale) {
+    const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetScale));
+    if (newScale === viewScale) return;
+    const [kx, ky] = cssToKm(px, py);
+    viewScale = newScale;
+    const s = pxPerKmNow();
+    viewCenter = { x: kx - (px - wCss / 2) / s, y: ky + (py - hCss / 2) / s };
+    clampCenter();
+  }
+
+  function zoomBy(px, py, factor) {
+    setZoomAt(px, py, viewScale * factor);
+  }
+
+  function panBy(dxPx, dyPx) {
+    const s = pxPerKmNow();
+    viewCenter = { x: viewCenter.x - dxPx / s, y: viewCenter.y + dyPx / s };
+    clampCenter();
+  }
+
+  function resetView() {
+    viewScale = 1;
+    viewCenter = { x: 0, y: 0 };
+  }
+
+  const getZoom = () => viewScale;
+  const isDefaultView = () => viewScale === 1 && viewCenter.x === 0 && viewCenter.y === 0;
 
   function buildPaths(encoded) {
     const path = new Path2D();
@@ -3169,10 +3299,10 @@ function createRenderer(canvas) {
   }
 
   function niceScaleKm() {
-    const target = sizeCss * 0.16; // px
-    const kmPerPx = DOMAIN / sizeCss;
+    const target = Math.min(wCss, hCss) * 0.16; // px
+    const kmPerPx = 1 / pxPerKmNow();
     const raw = target * kmPerPx;
-    const steps = [100, 200, 250, 500];
+    const steps = [50, 100, 200, 250, 500, 1000];
     let best = steps[0];
     for (const s of steps) if (Math.abs(s - raw) < Math.abs(best - raw)) best = s;
     return best;
@@ -3181,29 +3311,31 @@ function createRenderer(canvas) {
   function draw(scene) {
     resize();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, sizeCss, sizeCss);
+    ctx.clearRect(0, 0, wCss, hCss);
 
     ctx.fillStyle = theme.water;
-    ctx.fillRect(0, 0, sizeCss, sizeCss);
+    ctx.fillRect(0, 0, wCss, hCss);
 
+    const s = pxPerKmNow();
+    const domainPx = DOMAIN * s;
+    const [htlx, htly] = kmToCss(-HALF_EXTENT, HALF_EXTENT);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.save();
     ctx.globalAlpha = overlayOpacity;
-    ctx.drawImage(heatCanvas, 0, 0, sizeCss, sizeCss);
+    ctx.drawImage(heatCanvas, htlx, htly, domainPx, domainPx);
     ctx.restore();
 
-    const k = sizeCss / DOMAIN;
     ctx.save();
-    ctx.scale(k, k);
-    ctx.translate(HALF_EXTENT, HALF_EXTENT);
+    ctx.scale(s, s);
+    ctx.translate(wCss / (2 * s) - viewCenter.x, hCss / (2 * s) + viewCenter.y);
     ctx.lineJoin = "round";
     ctx.strokeStyle = theme.border;
-    ctx.lineWidth = 0.75 / k;
+    ctx.lineWidth = 0.75 / s;
     ctx.globalAlpha = 0.55;
     ctx.stroke(borderPath);
     ctx.strokeStyle = theme.coast;
-    ctx.lineWidth = 1 / k;
+    ctx.lineWidth = 1 / s;
     ctx.globalAlpha = 0.9;
     ctx.stroke(coastPath);
     ctx.restore();
@@ -3282,9 +3414,9 @@ function createRenderer(canvas) {
 
   function drawScaleBar() {
     const km = niceScaleKm();
-    const w = (km / DOMAIN) * sizeCss;
+    const w = km * pxPerKmNow();
     const x = 18;
-    const y = sizeCss - 20;
+    const y = hCss - 20;
     ctx.save();
     ctx.strokeStyle = theme.ink;
     ctx.fillStyle = theme.ink;
@@ -3327,7 +3459,13 @@ function createRenderer(canvas) {
     anchorAt,
     cssToLatLon,
     latLonToCss,
-    getSizeCss: () => sizeCss,
+    getSizeCss: () => Math.min(wCss, hCss),
+    getZoom,
+    isDefaultView,
+    setZoomAt,
+    zoomBy,
+    panBy,
+    resetView,
   };
 }
 
@@ -3412,35 +3550,30 @@ function buildApp(root) {
 
   root.innerHTML = `
   <div id="app">
-    <header class="topbar">
-      <div class="brand">
-        <h1><span class="mark">◉</span> Location evidence</h1>
-        <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
-      </div>
-      <div class="presets">
+    <div class="map-pane">
+      <canvas id="map"></canvas>
+
+      <!-- scenario card: top-left, the entry point -- must not get lost -->
+      <section class="card scenario-card">
+        <div class="brand">
+          <h1><span class="mark">◉</span> Location evidence</h1>
+          <span class="sub">signed latency receipts → posterior belief · evidence evaluation, visualized</span>
+        </div>
         <div class="preset-chips" id="preset-chips"></div>
         <div class="preset-caption" id="preset-caption"></div>
-      </div>
-      <div class="top-actions">
-        <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
-        <button class="btn" id="reset-btn" title="return to this preset's initial state">reset</button>
-      </div>
-    </header>
-    <main>
-      <section class="map-pane">
-        <canvas id="map"></canvas>
-        <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
-        <div class="hud">
-          <div class="legend">
-            <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
-            <div class="bar" id="legend-bar"></div>
-            <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
-          </div>
+        <div class="scenario-actions">
+          <label class="switch"><input type="checkbox" id="reveal-truth"><span>reveal truth</span></label>
+          <button class="btn small" id="reset-btn" title="return to this preset's initial state">reset</button>
         </div>
-        <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
-        <div id="map-tip"></div>
       </section>
-      <aside class="controls">
+
+      <!-- parameters column: floating right side, collapsible, scrolls within itself -->
+      <aside class="card params-card" id="params-card">
+        <div class="params-head">
+          <span>parameters</span>
+          <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">‹</button>
+        </div>
+        <div class="params-scroll" id="params-scroll">
         <section class="panel">
           <h2>anchors
             <span class="h-actions">
@@ -3538,8 +3671,23 @@ function buildApp(root) {
             </div>
           </details>
         </section>
+        </div>
       </aside>
-    </main>
+
+      <div class="placing-note" id="placing-note">click the map to place the anchor · esc to cancel</div>
+
+      <div class="hud">
+        <button class="btn small view-btn" id="reset-view-btn" type="button" title="reset pan and zoom">⤢ reset view</button>
+        <div class="legend">
+          <div class="title-row"><span>posterior probability</span>${info("floor")}</div>
+          <div class="bar" id="legend-bar"></div>
+          <div class="ends"><span>floor</span><span>log scale · dim = haze</span><span>peak</span></div>
+        </div>
+      </div>
+
+      <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
+      <div id="map-tip"></div>
+    </div>
   </div>`;
 
   const $ = (sel) => root.querySelector(sel);
@@ -4241,6 +4389,23 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   });
 
   $("#reset-btn").addEventListener("click", () => loadPreset(state.presetId));
+
+
+  {
+    const card = $("#params-card");
+    const toggle = $("#params-collapse");
+    toggle.addEventListener("click", () => {
+      const collapsed = card.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      toggle.setAttribute("aria-label", collapsed ? "expand parameters" : "collapse parameters");
+    });
+  }
+
+
+  $("#reset-view-btn").addEventListener("click", () => {
+    renderer.resetView();
+    drawScene();
+  });
 
   {
     const chips = $("#preset-chips");

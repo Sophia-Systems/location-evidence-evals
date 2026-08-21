@@ -236,3 +236,19 @@ following those.
     land-fill code path is left in `make-map-data.mjs`, gated off by a
     `SHIP_LAND_FILL = false` constant with the bug written up inline, and
     `map-data.js` ships coastlines/borders only, no `LAND` export.
+30. **Full-bleed map with floating panels.** *(Adjudicated by John.)* John,
+    reviewing the live page: replace the fixed top-ribbon + right-sidebar
+    layout with a full-bleed map canvas (`#map` now `position:absolute;
+    inset:0` inside `.map-pane`, no more square-letterboxed centering) and
+    floating overlay cards -- a scenario card top-left (brand, preset chips,
+    caption, reveal-truth/reset -- the entry point, must not get lost), a
+    collapsible parameters column floating on the right (scrollable within
+    itself via `.params-scroll`, independent of the page), the legend
+    bottom-right, the assumptions readout along the bottom, and a small
+    reset-view control stacked above the legend. Kept every existing
+    element id/class the JS wiring depends on; only the surrounding
+    containers and CSS positioning changed. render.js's `resize()` and
+    `kmToCss`/`cssToKm` were generalized in the same pass to support a
+    non-square canvas (previously always square, centered, letterboxed) --
+    this groundwork is shared with item 31 (pan/zoom), which reuses the same
+    two functions for its view transform.

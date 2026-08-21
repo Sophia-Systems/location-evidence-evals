@@ -33,23 +33,50 @@ export function createRenderer(canvas) {
   }
   refreshTheme();
 
-  // ---- geometry ------------------------------------------------------------
-  let sizeCss = 0; // css px, square
+  // ---- geometry --------------------------------------------------------
+  // The canvas is now full-bleed and generally NOT square (item 1: the map
+  // extends to all four viewport edges). wCss/hCss are its css-px extent;
+  // kmToCss/cssToKm compose a fit-to-contain baseline (the whole domain
+  // fits within the smaller dimension at zoom 1x) with a pan/zoom view
+  // transform (item 2) -- a pure 2D affine map, no reprojection. Every
+  // caller (heat layer, coastlines/borders, exclusion circles, anchors,
+  // declared star, truth crosshair, hover hit-testing, click-to-place)
+  // goes through these two functions, so all of them transform together.
+  let wCss = 0; // css px
+  let hCss = 0; // css px
   let dpr = 1;
+
+  const MIN_ZOOM = 1;
+  const MAX_ZOOM = 8;
+  let viewScale = 1; // 1x = current full-domain fit
+  let viewCenter = { x: 0, y: 0 }; // km, domain point at canvas center
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
-    sizeCss = Math.min(rect.width, rect.height);
+    wCss = rect.width;
+    hCss = rect.height;
     dpr = window.devicePixelRatio || 1;
-    const px = Math.max(1, Math.round(sizeCss * dpr));
-    if (canvas.width !== px) {
-      canvas.width = px;
-      canvas.height = px;
+    const pw = Math.max(1, Math.round(wCss * dpr));
+    const ph = Math.max(1, Math.round(hCss * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
     }
   }
 
-  const kmToCss = (x, y) => [((x + HALF_EXTENT) / DOMAIN) * sizeCss, ((HALF_EXTENT - y) / DOMAIN) * sizeCss];
-  const cssToKm = (px, py) => [(px / sizeCss) * DOMAIN - HALF_EXTENT, HALF_EXTENT - (py / sizeCss) * DOMAIN];
+  // km per css px at the current zoom, fit-to-contain baseline against the
+  // SHORTER canvas dimension (so the full domain is always visible at 1x,
+  // whatever the viewport's aspect ratio).
+  const pxPerKmNow = () => (Math.min(wCss, hCss) / DOMAIN) * viewScale;
+
+  const kmToCss = (x, y) => {
+    const s = pxPerKmNow();
+    return [wCss / 2 + (x - viewCenter.x) * s, hCss / 2 - (y - viewCenter.y) * s];
+  };
+  const cssToKm = (px, py) => {
+    const s = pxPerKmNow();
+    return [viewCenter.x + (px - wCss / 2) / s, viewCenter.y - (py - hCss / 2) / s];
+  };
   const latLonToCss = (lat, lon) => {
     const p = project(lat, lon);
     return kmToCss(p.x, p.y);
@@ -58,6 +85,47 @@ export function createRenderer(canvas) {
     const [x, y] = cssToKm(px, py);
     return unproject(x, y);
   };
+
+  // Keep at least a generous margin of the domain reachable -- a loose
+  // guard against panning so far that the map is lost entirely, not a tight
+  // bound (free exploration is the point of panning).
+  function clampCenter() {
+    const margin = HALF_EXTENT * 1.3;
+    viewCenter.x = Math.max(-margin, Math.min(margin, viewCenter.x));
+    viewCenter.y = Math.max(-margin, Math.min(margin, viewCenter.y));
+  }
+
+  // Cursor-centered zoom: the km point currently under (px, py) stays under
+  // the cursor after the scale change.
+  function setZoomAt(px, py, targetScale) {
+    const newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetScale));
+    if (newScale === viewScale) return;
+    const [kx, ky] = cssToKm(px, py);
+    viewScale = newScale;
+    const s = pxPerKmNow();
+    viewCenter = { x: kx - (px - wCss / 2) / s, y: ky + (py - hCss / 2) / s };
+    clampCenter();
+  }
+
+  function zoomBy(px, py, factor) {
+    setZoomAt(px, py, viewScale * factor);
+  }
+
+  // Drag-to-pan: dxPx/dyPx are the pointer's css-px movement since the last
+  // frame (content should track the pointer, hence the sign choices below).
+  function panBy(dxPx, dyPx) {
+    const s = pxPerKmNow();
+    viewCenter = { x: viewCenter.x - dxPx / s, y: viewCenter.y + dyPx / s };
+    clampCenter();
+  }
+
+  function resetView() {
+    viewScale = 1;
+    viewCenter = { x: 0, y: 0 };
+  }
+
+  const getZoom = () => viewScale;
+  const isDefaultView = () => viewScale === 1 && viewCenter.x === 0 && viewCenter.y === 0;
 
   // ---- base map (Path2D in km space, built once) ---------------------------
   function buildPaths(encoded) {
@@ -254,10 +322,10 @@ export function createRenderer(canvas) {
   }
 
   function niceScaleKm() {
-    const target = sizeCss * 0.16; // px
-    const kmPerPx = DOMAIN / sizeCss;
+    const target = Math.min(wCss, hCss) * 0.16; // px
+    const kmPerPx = 1 / pxPerKmNow();
     const raw = target * kmPerPx;
-    const steps = [100, 200, 250, 500];
+    const steps = [50, 100, 200, 250, 500, 1000];
     let best = steps[0];
     for (const s of steps) if (Math.abs(s - raw) < Math.abs(best - raw)) best = s;
     return best;
@@ -270,32 +338,42 @@ export function createRenderer(canvas) {
   function draw(scene) {
     resize();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, sizeCss, sizeCss);
+    ctx.clearRect(0, 0, wCss, hCss);
 
-    // water / ground
+    // water / ground -- fills the full-bleed canvas, including any margin
+    // beyond the domain (visible when zoomed out on a wide viewport, or
+    // panned past the data)
     ctx.fillStyle = theme.water;
-    ctx.fillRect(0, 0, sizeCss, sizeCss);
+    ctx.fillRect(0, 0, wCss, hCss);
 
-    // probability field
+    // probability field: the heat canvas covers exactly the domain square
+    // [-HALF_EXTENT, HALF_EXTENT]^2, drawn at its current view-transformed
+    // position/size. Smoothing stays on so it doesn't pixelate harshly at
+    // 8x (the grid-resolution slider is the control for real detail).
+    const s = pxPerKmNow();
+    const domainPx = DOMAIN * s;
+    const [htlx, htly] = kmToCss(-HALF_EXTENT, HALF_EXTENT);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.save();
     ctx.globalAlpha = overlayOpacity;
-    ctx.drawImage(heatCanvas, 0, 0, sizeCss, sizeCss);
+    ctx.drawImage(heatCanvas, htlx, htly, domainPx, domainPx);
     ctx.restore();
 
-    // base linework above the field, kept quiet
-    const k = sizeCss / DOMAIN;
+    // base linework above the field, kept quiet. Coast/border Path2D are
+    // built in km space (y pre-negated); this transform is the same affine
+    // map as kmToCss, expressed as a canvas CTM so Path2D stroking stays
+    // fast (no per-vertex JS re-projection).
     ctx.save();
-    ctx.scale(k, k);
-    ctx.translate(HALF_EXTENT, HALF_EXTENT);
+    ctx.scale(s, s);
+    ctx.translate(wCss / (2 * s) - viewCenter.x, hCss / (2 * s) + viewCenter.y);
     ctx.lineJoin = "round";
     ctx.strokeStyle = theme.border;
-    ctx.lineWidth = 0.75 / k;
+    ctx.lineWidth = 0.75 / s;
     ctx.globalAlpha = 0.55;
     ctx.stroke(borderPath);
     ctx.strokeStyle = theme.coast;
-    ctx.lineWidth = 1 / k;
+    ctx.lineWidth = 1 / s;
     ctx.globalAlpha = 0.9;
     ctx.stroke(coastPath);
     ctx.restore();
@@ -381,9 +459,9 @@ export function createRenderer(canvas) {
 
   function drawScaleBar() {
     const km = niceScaleKm();
-    const w = (km / DOMAIN) * sizeCss;
+    const w = km * pxPerKmNow();
     const x = 18;
-    const y = sizeCss - 20;
+    const y = hCss - 20;
     ctx.save();
     ctx.strokeStyle = theme.ink;
     ctx.fillStyle = theme.ink;
@@ -427,6 +505,13 @@ export function createRenderer(canvas) {
     anchorAt,
     cssToLatLon,
     latLonToCss,
-    getSizeCss: () => sizeCss,
+    getSizeCss: () => Math.min(wCss, hCss),
+    // pan/zoom (item 2)
+    getZoom,
+    isDefaultView,
+    setZoomAt,
+    zoomBy,
+    panBy,
+    resetView,
   };
 }
