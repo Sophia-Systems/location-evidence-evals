@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Location evidence — evidence evaluation, step by step</title>
+<title>Verifying compute location — step by step</title>
 <style>
 /* story.css -- the mobile scroll story.
    Same "verifier's bench" voice as style.css: warm paper in light,
@@ -2439,6 +2439,8 @@ const PRESETS = [
     caption:
       "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. Try dragging an anchor, or lowering one's trust.",
     declared: CAMBRIDGE,
+    declaredName: "Cambridge, UK",
+    trueName: "Cambridge, UK",
     windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -2456,6 +2458,8 @@ const PRESETS = [
     caption:
       "Declared Tallinn -- but the machine is actually in St Petersburg, padding its answers to look like Tallinn. Padding only ever adds time, so probability mass settles on the truth, not the claim.",
     declared: TALLINN,
+    declaredName: "Tallinn, Estonia",
+    trueName: "St Petersburg, Russia",
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
     allowance: 0,
@@ -3800,7 +3804,7 @@ function createRenderer(canvas) {
     ctx.restore();
   }
 
-  function frameWindow(points, obstructRight = 0) {
+  function frameWindow(points, obstructRight = 0, obstructLeft = 0) {
     resize();
     if (!boundaryPts || !(wCss > 0)) return;
     let framed = null;
@@ -3811,13 +3815,13 @@ function createRenderer(canvas) {
       });
       if (!framed.length) framed = null;
     }
-    const effW = framed
-      ? Math.max(wCss - Math.max(0, obstructRight), wCss * 0.55)
-      : wCss;
+    const cutR = Math.max(0, obstructRight);
+    const cutL = Math.max(0, obstructLeft);
+    const effW = framed ? Math.max(wCss - cutR - cutL, wCss * 0.45) : wCss;
     const fit = computeViewFit(effW, hCss, windowCenter, framed, boundaryPts);
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit.scale)));
     const s = Math.pow(2, zoom);
-    viewCenter = { wx: fit.cx + (wCss - effW) / (2 * s), wy: fit.cy };
+    viewCenter = { wx: fit.cx + (wCss / 2 - cutL - effW / 2) / s, wy: fit.cy };
     clampView();
   }
 

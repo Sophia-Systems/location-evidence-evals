@@ -486,9 +486,42 @@ following those.
     declared star replaced by an ink-ringed translucent circle the truth
     graticule overlays cleanly when declared = true.
 
+44. **Second review round (adjudicated by John).** The scenario card leads
+    with policy motivation (AI-chip location verification as a check on
+    declared use and proliferation risk) in John's own copy, then mechanism
+    (anchor nodes probe attester nodes with governed GPUs; signed challenges;
+    lightspeed bounds), then what the demo shows (evidence updating the
+    spatial probability distribution) with the research link; the subtitle
+    line is gone. "How to use" is now "Instructions". The simulator panel is
+    removed outright -- free-play world-truth knobs (attack mode, true
+    delta_att, path noise) confused more than they taught; the scenario
+    defines the world, and a new read-only **Attester** card on the left
+    (declared location, behavior, true location hidden behind "Reveal true
+    location") organizes the story: attester and evidence left, anchors
+    right. The collusion-risk tip is one line ("Higher risk means this
+    anchor's evidence carries less weight"). Natural-language UI copy is
+    sentence-cased throughout (parameter/variable names stay as symbols).
+    Evidence rows no longer shrink when several are expanded (flex: none;
+    receipt fields wrap). Credits added to "About this model".
+
+45. **Third review round (adjudicated by John).** Title is "Verifying
+    compute location" (page <title> too). Blurb: attester nodes "operating
+    sensitive GPUs"; the research link reads as a link (weight + tasteful
+    underline). The attester block moved inside the scenario card under a
+    "Scenario" header (chips + Reset + attester rows); behavior wording is
+    simply "Evasive -- manipulates responses". The preset caption and the
+    assumptions line (compliant attester / allowance / uniform prior) are
+    gone -- jargon without a reader. Credits link John Hoopes ->
+    johnx.co/research and CAISH Hardware Assurance Programme ->
+    caish.org/hardware (both whitelisted as nav-only hrefs). The map
+    tooltip sizes to its content (width: max-content) so the risk/cap line
+    no longer spills past the box, and default framing now subtracts the
+    LEFT column's obstruction as well as the right's, so the staging
+    centers in the visible gap (frameWindow gained an obstructLeft).
+
 ## v4: the mobile story
 
-44. **Small screens get a scroll story, not a squeezed bench.** *(Adjudicated
+46. **Small screens get a scroll story, not a squeezed bench.** *(Adjudicated
     by John: a very simplified mobile experience -- "a step through or scroll
     story visualizing the key idea".)* The bench pins `min-width: 1080px` and
     PROMPT.md says desktop-optimized, mobile only if free; instead of a
@@ -519,8 +552,8 @@ following those.
     escape hatch, and the story's own "full demo" link uses it so the pages
     never bounce.
 
-45. **Story pared to five calibrated steps.** *(Adjudicated by John,
-    reviewing item 44's build.)* Directions applied: eyebrows and the kicker
+47. **Story pared to five calibrated steps.** *(Adjudicated by John,
+    reviewing item 46's build.)* Directions applied: eyebrows and the kicker
     removed (cards open with their heading; the progress rail alone carries
     position); the OPERATOR declares, the DEVICE is measured -- wording fixed
     throughout; the "locations inside stay roughly equally plausible" claim
@@ -541,7 +574,7 @@ following those.
     story's framings sit well inside the window, so the clamp bought
     nothing.
 
-46. **Title slide opens the story with the desktop intro.** *(Adjudicated by
+48. **Title slide opens the story with the desktop intro.** *(Adjudicated by
     John: the opening was abrupt -- lead with "Verifying compute location"
     and the intro he added to the desktop scenario card, then scroll into
     the map.)* New centered step 0 reuses the desktop blurbs near-verbatim
@@ -555,7 +588,7 @@ following those.
     closing aside now says the desktop version "has more features" instead
     of "the full demo," and its link reads "Open the desktop version."
 
-47. **Orientation beat, solid declared marker, research link first.**
+49. **Orientation beat, solid declared marker, research link first.**
     *(Adjudicated by John.)* The false-declaration sequence split in two:
     the scenario jump lands on an orientation step (new area, uniform
     field, declared Tallinn, no evidence yet), and the next scroll expands

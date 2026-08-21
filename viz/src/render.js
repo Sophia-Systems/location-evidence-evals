@@ -895,7 +895,7 @@ export function createRenderer(canvas) {
   // visible, and a boundary segment under the card cannot be seen either --
   // and the framed staging is centered in that region, not the full canvas.
   // Capped so a very narrow canvas never collapses the frame region.
-  function frameWindow(points, obstructRight = 0) {
+  function frameWindow(points, obstructRight = 0, obstructLeft = 0) {
     resize();
     if (!boundaryPts || !(wCss > 0)) return;
     let framed = null;
@@ -906,14 +906,15 @@ export function createRenderer(canvas) {
       });
       if (!framed.length) framed = null;
     }
-    const effW = framed
-      ? Math.max(wCss - Math.max(0, obstructRight), wCss * 0.55)
-      : wCss;
+    const cutR = Math.max(0, obstructRight);
+    const cutL = Math.max(0, obstructLeft);
+    const effW = framed ? Math.max(wCss - cutR - cutL, wCss * 0.45) : wCss;
     const fit = computeViewFit(effW, hCss, windowCenter, framed, boundaryPts);
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit.scale)));
     const s = Math.pow(2, zoom);
     // place the fit center at the middle of the unobstructed region
-    viewCenter = { wx: fit.cx + (wCss - effW) / (2 * s), wy: fit.cy };
+    // (canvas center minus region center, in world units)
+    viewCenter = { wx: fit.cx + (wCss / 2 - cutL - effW / 2) / s, wy: fit.cy };
     clampView();
   }
 

@@ -27,13 +27,13 @@ const src = (f) => readFileSync(join(here, "src", f), "utf8");
 const PAGES = [
   {
     out: "index.html",
-    title: "Location evidence — evidence evaluation, visualized",
+    title: "Verifying compute location",
     css: "style.css",
     modules: ["geo.js", "map-data.js", "ramps.js", "engine.js", "render.js", "ui.js", "main.js"],
   },
   {
     out: "story.html",
-    title: "Location evidence — evidence evaluation, step by step",
+    title: "Verifying compute location — step by step",
     css: "story.css",
     modules: ["geo.js", "map-data.js", "ramps.js", "engine.js", "render.js", "story.js"],
   },
@@ -74,7 +74,7 @@ function stripModule(code, name) {
 // they load nothing unless clicked, so they are not part of the page's
 // network surface. Relative hrefs between the two pages are likewise inert.
 const TILE_HOST = "basemaps.cartocdn.com";
-const NAV_LINKS = new Set(["https://johnx.co/research"]);
+const NAV_LINKS = new Set(["https://johnx.co/research", "https://caish.org/hardware"]);
 
 function verify(html, script, out) {
   // 1. The concatenated script must parse as plain (non-module) JS.
