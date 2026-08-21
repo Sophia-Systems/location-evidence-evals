@@ -758,6 +758,26 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     refresh({ animate });
   }
 
+  // ---- pan (item 2) ---------------------------------------------------------
+  // Drag-to-pan on empty map background. Anchor dragging above always wins:
+  // pointerdown only starts a pan when anchorAt found nothing (or placing is
+  // active). Pan only re-draws the view transform -- it never touches the
+  // engine or recomputes the posterior, so it stays cheap at any zoom.
+  let panning = false;
+  let panMoved = false;
+  let panDownX = 0;
+  let panDownY = 0;
+  let panLastX = 0;
+  let panLastY = 0;
+  let panDrawPending = null;
+
+  function cancelPendingPanDraw() {
+    if (panDrawPending != null) {
+      cancelAnimationFrame(panDrawPending);
+      panDrawPending = null;
+    }
+  }
+
   canvas.addEventListener("pointerdown", (e) => {
     if (state.placing) return;
     const [px, py] = canvasPos(e);
@@ -768,7 +788,15 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
       dragDownX = px;
       dragDownY = py;
       canvas.setPointerCapture(e.pointerId);
+      return;
     }
+    panning = true;
+    panMoved = false;
+    panDownX = px;
+    panDownY = py;
+    panLastX = px;
+    panLastY = py;
+    canvas.setPointerCapture(e.pointerId);
   });
 
   canvas.addEventListener("pointermove", (e) => {
@@ -788,6 +816,26 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
           movePending = null;
           if (state.dragId == null) return; // released before the frame fired
           applyDragMove(false);
+        });
+      }
+      return;
+    }
+    if (panning) {
+      if (!panMoved) {
+        if (Math.hypot(px - panDownX, py - panDownY) < DRAG_THRESHOLD_PX) return;
+        panMoved = true;
+        canvas.classList.add("panning");
+        tip.classList.remove("show");
+      }
+      // Applied immediately (cheap arithmetic, no recompute); only the
+      // actual redraw is throttled to one per animation frame.
+      renderer.panBy(px - panLastX, py - panLastY);
+      panLastX = px;
+      panLastY = py;
+      if (panDrawPending == null) {
+        panDrawPending = requestAnimationFrame(() => {
+          panDrawPending = null;
+          drawScene();
         });
       }
       return;
@@ -817,6 +865,16 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
       if (!moved) doProbe(id); // a click on an anchor IS the primary action
       return;
     }
+    if (panning) {
+      const moved = panMoved;
+      cancelPendingPanDraw();
+      panning = false;
+      panMoved = false;
+      canvas.classList.remove("panning");
+      canvas.releasePointerCapture(e.pointerId);
+      if (moved) drawScene(); // flush the final frame
+      return; // an unmoved background click is a no-op, same as before
+    }
     if (state.placing) {
       const [px, py] = canvasPos(e);
       const ll = renderer.cssToLatLon(px, py);
@@ -835,18 +893,43 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
   });
 
   canvas.addEventListener("pointercancel", () => {
-    if (!state.dragId) return;
-    cancelPendingDragMove();
-    const moved = state.dragMoved;
-    state.dragId = null;
-    state.dragMoved = false;
-    canvas.classList.remove("dragging");
-    if (moved) refresh({ animate: true }); // settle where the drag left it
+    if (state.dragId) {
+      cancelPendingDragMove();
+      const moved = state.dragMoved;
+      state.dragId = null;
+      state.dragMoved = false;
+      canvas.classList.remove("dragging");
+      if (moved) refresh({ animate: true }); // settle where the drag left it
+      return;
+    }
+    if (panning) {
+      cancelPendingPanDraw();
+      panning = false;
+      panMoved = false;
+      canvas.classList.remove("panning");
+    }
   });
 
   canvas.addEventListener("pointerleave", () => {
-    if (!state.dragId) setHover(null);
+    if (!state.dragId && !panning) setHover(null);
   });
+
+  // Cursor-centered wheel-zoom, 1x-8x (item 2). preventDefault so the page
+  // never scrolls/pinch-zooms under the cursor instead. View-only: redraws
+  // through the same transform pan uses, never recomputes the posterior.
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const [px, py] = canvasPos(e);
+      // Normalize deltaMode (0 = px, 1 = lines, 2 = pages) to a roughly
+      // consistent feel across mice, trackpads, and browsers.
+      const norm = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      renderer.zoomBy(px, py, Math.exp(-norm * 0.0015));
+      drawScene();
+    },
+    { passive: false }
+  );
 
   // ---- verifier parameter controls ----------------------------------------
 

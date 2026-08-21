@@ -252,3 +252,24 @@ following those.
     non-square canvas (previously always square, centered, letterboxed) --
     this groundwork is shared with item 31 (pan/zoom), which reuses the same
     two functions for its view transform.
+31. **Pan and zoom.** *(Adjudicated by John.)* Wheel-zoom centered on the
+    cursor and drag-to-pan on empty map background, 1x (full-domain fit) to
+    8x, on the existing azimuthal-equidistant plane -- a pure 2D affine view
+    transform (`viewScale`/`viewCenter` in render.js), no reprojection.
+    Everything reads it through `kmToCss`/`cssToKm`: heat layer, coastlines/
+    borders, exclusion circles, anchors, declared star, truth crosshair,
+    hover hit-testing, click-to-place. Anchor dragging wins over panning
+    because `pointerdown` checks `anchorAt` first and only starts a pan when
+    it finds nothing (or when not in placing mode); the existing 4 px
+    click-vs-drag threshold is reused unmodified for pan's own click-vs-drag
+    distinction, so an unmoved background click stays a no-op. Panning
+    applies each pointer delta immediately (cheap arithmetic) but throttles
+    the actual `drawScene()` to one per animation frame; wheel and pan never
+    call `engine.computePosterior()`, only the view-transformed redraw --
+    the posterior stays fixed while navigating. `viewCenter` is loosely
+    clamped (±1.3x the domain half-extent) so panning can't lose the map
+    entirely, while still reaching well past the data into the water-filled
+    margin. Browser-verified: wheel-zoom into Denmark shows visibly finer
+    10m coastline detail than the 1x overview; pan, anchor-drag-at-zoom, and
+    probe-at-zoom all keep the heat layer/circles/anchors aligned; reset-view
+    returns to the exact 1x/centered state.

@@ -95,7 +95,9 @@ body {
   width: 100%;
   height: 100%;
   display: block;
-  cursor: default;
+  /* grab affordance on empty background hints that it pans (item 2);
+     more specific states below override it */
+  cursor: grab;
   touch-action: none;
 }
 
@@ -112,7 +114,7 @@ body {
 }
 
 #map.panning {
-  cursor: grab;
+  cursor: grabbing;
 }
 
 /* floating card: shared elevation/material for every overlay panel */
