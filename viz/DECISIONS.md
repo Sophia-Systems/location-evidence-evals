@@ -485,3 +485,36 @@ following those.
     one or two sentences, overlay opacity defaulting to 100%, and the
     declared star replaced by an ink-ringed translucent circle the truth
     graticule overlays cleanly when declared = true.
+
+## v4: the mobile story
+
+44. **Small screens get a scroll story, not a squeezed bench.** *(Adjudicated
+    by John: a very simplified mobile experience -- "a step through or scroll
+    story visualizing the key idea".)* The bench pins `min-width: 1080px` and
+    PROMPT.md says desktop-optimized, mobile only if free; instead of a
+    responsive retrofit, a second self-contained page `viz/story.html`
+    (build.mjs now emits both) tells the one idea in six beats over the same
+    engine and renderer: the claim (uniform belief), one receipt (erasure),
+    geometry (the lens on Cambridge), trust (the same receipts prove less at
+    collusion risk 0.30), the lie (evasive preset, padding toward Tallinn),
+    detection (truth revealed in St Petersburg -- the false claim falsified;
+    the allowance and anchor-independence caveats close as an aside, per
+    John's correction that the story must END on detection, result 5, not on
+    the allowance failure, result 4). Mechanics: a sticky full-viewport map
+    behind scroll-driven cards (IntersectionObserver, plus per-card "next"
+    buttons and a progress rail); steps are CUMULATIVE engine ops replayed
+    from a fixed-seed base, so scrolling in any order reproduces identical
+    state -- forward-by-one plays the step's staged probes, any other jump
+    rebuilds silently and tweens once. The camera fit reuses computeViewFit
+    with the bench's obstruction idea turned vertical (the card floats over
+    the viewport bottom; the stage centers in the unobstructed region), via
+    new raw view accessors (getView/setView) on the renderer. Two display
+    divergences from the bench, both because the cards narrate the wash:
+    uniform-belief tint 0.22 -> 0.32 and overlay opacity 100%.
+    buildTargetT/presentField are copied from ui.js rather than shared --
+    ui.js keeps them private to buildApp, and extracting them mid-flight was
+    judged worse than a noted duplication. story.css mirrors the theme
+    tokens for the same reason (render.js reads them off document.body).
+    index.html redirects viewports <= 760 px to the story; `?full` is the
+    escape hatch, and the story's own "full demo" link uses it so the pages
+    never bounce.
