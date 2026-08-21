@@ -473,7 +473,9 @@ export function createRenderer(canvas) {
     const km = niceScaleKm();
     const w = km * pxPerKmNow();
     const x = 18;
-    const y = hCss - 20;
+    // sit clear of the assumptions readout, which floats bottom-left over
+    // the canvas (bottom: 16px, ~30px tall)
+    const y = hCss - 58;
     ctx.save();
     ctx.strokeStyle = theme.ink;
     ctx.fillStyle = theme.ink;
