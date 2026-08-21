@@ -201,3 +201,14 @@ following those.
     explicit `pi` passed to `addAnchor` still overrides inheritance. Engine
     tracks this as `defaultAnchorPi`, set in `loadPreset`; exposed as
     `getDefaultAnchorPi()` for the UI and tests.
+28. **Heat overlay opacity slider + magma default ramp.** *(Adjudicated by
+    John.)* PROMPT.md specifies viridis as the default color ramp and does
+    not mention an opacity control. John, reviewing the live page: add an
+    overlay-opacity slider (10-100%, default 100% -- the prior fixed
+    behavior) directly under the ramp selector, and make magma the default
+    ramp instead of viridis. Ramp and opacity are display preferences (like
+    grid shape/resolution) that persist across presets rather than resetting
+    on `loadPreset`. Implemented as a single `ctx.globalAlpha` around the
+    heat-canvas `drawImage` in render.js -- the per-cell alpha the field
+    already encodes (structure/confidence, see ui.js `buildTargetT`) is
+    untouched; opacity is a pure display multiplier on top of it.

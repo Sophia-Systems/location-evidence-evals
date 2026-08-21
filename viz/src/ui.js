@@ -82,7 +82,8 @@ export function buildApp(root) {
     presetId: "baseline",
     clockMs: NOON,
     revealTruth: false,
-    ramp: "viridis",
+    ramp: "magma",
+    opacity: 1,
     hoverId: null,
     dragId: null,
     dragMoved: false,
@@ -187,6 +188,9 @@ export function buildApp(root) {
             <span class="val" id="grid-res-val"></span></div>
           <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
             <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
+          <div class="row"><span class="lbl">overlay opacity</span>
+            <input type="range" id="opacity" min="10" max="100" step="5" value="100">
+            <span class="val" id="opacity-val"></span></div>
         </section>
 
         <section class="panel">
@@ -961,8 +965,23 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
         drawScene();
       }
     });
-    row.querySelector(`button[data-ramp="viridis"]`).classList.add("active");
-    $("#legend-bar").style.background = rampGradientCSS("viridis");
+    row.querySelector(`button[data-ramp="${state.ramp}"]`).classList.add("active");
+    renderer.setRamp(state.ramp);
+    $("#legend-bar").style.background = rampGradientCSS(state.ramp);
+  }
+
+  // overlay opacity: a display preference (item 4), persists across presets
+  {
+    const el = $("#opacity");
+    el.value = String(Math.round(state.opacity * 100));
+    $("#opacity-val").textContent = `${el.value}%`;
+    renderer.setOpacity(state.opacity);
+    el.addEventListener("input", () => {
+      state.opacity = Number(el.value) / 100;
+      $("#opacity-val").textContent = `${el.value}%`;
+      renderer.setOpacity(state.opacity);
+      drawScene();
+    });
   }
 
   // ---- top bar ------------------------------------------------------------

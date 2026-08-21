@@ -78,10 +78,15 @@ export function createRenderer(canvas) {
   let heatImage = null;
   let hexMap = null; // Uint32Array pixel -> cell index (hex grids only)
   let hexBuf = 0;
-  let rampName = "viridis";
+  let rampName = "magma";
+  let overlayOpacity = 1; // display preference (item 4): 0.1..1, persists across presets
 
   function setRamp(name) {
     rampName = name;
+  }
+
+  function setOpacity(v) {
+    overlayOpacity = Math.max(0, Math.min(1, v));
   }
 
   function setGrid(g) {
@@ -274,7 +279,10 @@ export function createRenderer(canvas) {
     // probability field
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
+    ctx.save();
+    ctx.globalAlpha = overlayOpacity;
     ctx.drawImage(heatCanvas, 0, 0, sizeCss, sizeCss);
+    ctx.restore();
 
     // base linework above the field, kept quiet
     const k = sizeCss / DOMAIN;
@@ -413,6 +421,7 @@ export function createRenderer(canvas) {
     refreshTheme,
     setGrid,
     setRamp,
+    setOpacity,
     updateHeat,
     draw,
     anchorAt,
