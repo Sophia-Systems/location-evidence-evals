@@ -9,7 +9,7 @@
 // the Carto basemap tile host (v2 adjudication: tiles allowed, superseding
 // the original zero-network clause; the inlined vector geography keeps the
 // pages fully functional offline). No other http(s) URLs, no import
-// statements, no fetch calls.
+// statements, and exactly one fetch call site -- the vector tile source.
 //
 // Run: node viz/build.mjs
 
@@ -29,13 +29,13 @@ const PAGES = [
     out: "index.html",
     title: "Verifying compute location",
     css: "style.css",
-    modules: ["geo.js", "map-data.js", "ramps.js", "engine.js", "render.js", "ui.js", "main.js"],
+    modules: ["geo.js", "map-data.js", "ramps.js", "vector-tiles.js", "engine.js", "render.js", "ui.js", "main.js"],
   },
   {
     out: "story.html",
     title: "Verifying compute location — step by step",
     css: "story.css",
-    modules: ["geo.js", "map-data.js", "ramps.js", "engine.js", "render.js", "story.js"],
+    modules: ["geo.js", "map-data.js", "ramps.js", "vector-tiles.js", "engine.js", "render.js", "story.js"],
   },
 ];
 
@@ -95,7 +95,6 @@ function verify(html, script, out) {
   }
   for (const [pattern, why] of [
     [/^\s*import\s/m, "import statement"],
-    [/\bfetch\s*\(/, "fetch call"],
     [/XMLHttpRequest/, "XHR"],
     [/<link\s/i, "external link tag"],
     [/\bsrc\s*=\s*["'](?!data:)/i, "external src attribute"],
@@ -104,6 +103,22 @@ function verify(html, script, out) {
       console.error(`FAIL: ${out} contains ${why} (${pattern})`);
       process.exit(1);
     }
+  }
+
+  // 3. fetch is no longer banned outright -- MVT tiles are ArrayBuffers, so
+  // the vector basemap has to fetch them (the raster layer could use
+  // `new Image()`). The ban narrows to a budget instead: exactly ONE call
+  // site, in the tile source. Combined with check 2 -- every http(s) literal
+  // in the bundle points at the tile host -- a lone fetch cannot reach
+  // anywhere else, since there is no other absolute URL for it to build.
+  const fetches = [...html.matchAll(/\bfetch\s*\(/g)].length;
+  if (fetches !== 1) {
+    console.error(`FAIL: ${out} has ${fetches} fetch call sites, expected exactly 1 (the tile source)`);
+    process.exit(1);
+  }
+  if (!/fetch\(url\)/.test(html) || !html.includes(`${TILE_HOST}/vectortiles/`)) {
+    console.error(`FAIL: ${out}'s fetch call is not the ${TILE_HOST} tile fetch`);
+    process.exit(1);
   }
 }
 
@@ -138,5 +153,5 @@ ${script}
   );
 }
 console.log(
-  "checks: scripts parse (node --check); network surface limited to the Carto tile host; no import/fetch/XHR/link/src refs"
+  "checks: scripts parse (node --check); network surface limited to the Carto tile host; no import/XHR/link/src refs; exactly one fetch call site (the tile source)"
 );
