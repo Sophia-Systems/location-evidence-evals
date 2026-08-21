@@ -83,7 +83,7 @@ export function buildApp(root) {
     clockMs: NOON,
     revealTruth: false,
     ramp: "magma",
-    opacity: 1,
+    opacity: 0.75,
     hoverId: null,
     dragId: null,
     dragMoved: false,
@@ -184,7 +184,7 @@ export function buildApp(root) {
           <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
             <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
           <div class="row"><span class="lbl">overlay opacity</span>
-            <input type="range" id="opacity" min="10" max="100" step="5" value="100">
+            <input type="range" id="opacity" min="10" max="100" step="5" value="75">
             <span class="val" id="opacity-val"></span></div>
         </section>
 
@@ -273,7 +273,9 @@ export function buildApp(root) {
       if (post[i] < pmin) pmin = post[i];
     }
     if (!(pmax > 0) || pmax / Math.max(pmin, 1e-300) < 1.05) {
-      t.fill(0.35); // uniform belief: a calm wash, not a shout
+      // uniform belief carries no information: a barely-there tint that the
+      // basemap clearly shows through -- saturation is earned by structure
+      t.fill(0.22);
       return t;
     }
     // dynamic range in decades, capped at the model's 1e-6 relative floor.

@@ -3139,7 +3139,7 @@ function createRenderer(canvas) {
   let hexMap = null; // Uint32Array pixel -> cell index (hex grids only)
   let hexBuf = 0;
   let rampName = "magma";
-  let overlayOpacity = 1; // display preference (item 4): 0.1..1, persists across presets
+  let overlayOpacity = 0.75; // display preference (item 4): 0.1..1, persists across presets
 
   function setRamp(name) {
     rampName = name;
@@ -3209,10 +3209,10 @@ function createRenderer(canvas) {
     }
   }
 
-  function updateHeat(tArr, flat) {
+  function updateHeat(tArr) {
     const lut = RAMPS[rampName];
     const data = heatImage.data;
-    const alphaFor = flat ? () => 26 : (t) => Math.round(255 * (0.06 + 0.82 * Math.pow(t, 1.3)));
+    const alphaFor = (t) => Math.round(255 * (0.045 + 0.875 * Math.pow(t, 1.8)));
     if (grid.shape === "square") {
       const n = grid.n;
       for (let j = 0; j < n; j++) {
@@ -3543,7 +3543,7 @@ function buildApp(root) {
     clockMs: NOON,
     revealTruth: false,
     ramp: "magma",
-    opacity: 1,
+    opacity: 0.75,
     hoverId: null,
     dragId: null,
     dragMoved: false,
@@ -3643,7 +3643,7 @@ function buildApp(root) {
           <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
             <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
           <div class="row"><span class="lbl">overlay opacity</span>
-            <input type="range" id="opacity" min="10" max="100" step="5" value="100">
+            <input type="range" id="opacity" min="10" max="100" step="5" value="75">
             <span class="val" id="opacity-val"></span></div>
         </section>
 
@@ -3719,7 +3719,7 @@ function buildApp(root) {
       if (post[i] < pmin) pmin = post[i];
     }
     if (!(pmax > 0) || pmax / Math.max(pmin, 1e-300) < 1.05) {
-      t.fill(0.35); // uniform belief: a calm wash, not a shout
+      t.fill(0.22);
       return t;
     }
     const decades = Math.log10(pmax / Math.max(pmin, pmax * 1e-6));

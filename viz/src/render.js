@@ -156,7 +156,7 @@ export function createRenderer(canvas) {
   let hexMap = null; // Uint32Array pixel -> cell index (hex grids only)
   let hexBuf = 0;
   let rampName = "magma";
-  let overlayOpacity = 1; // display preference (item 4): 0.1..1, persists across presets
+  let overlayOpacity = 0.75; // display preference (item 4): 0.1..1, persists across presets
 
   function setRamp(name) {
     rampName = name;
@@ -227,12 +227,15 @@ export function createRenderer(canvas) {
     }
   }
 
-  // tArr: display-space value per cell in [0, 1]. flat: field carries no
-  // information (uniform posterior) -> render as a whisper, not a wash.
-  function updateHeat(tArr, flat) {
+  // tArr: display-space value per cell in [0, 1]. The alpha curve is
+  // deliberately quiet through the low-mid range (zero-structure fields and
+  // single-receipt interiors sit there) so the basemap reads through the
+  // wash, and only climbs steeply toward t = 1 -- saturation is earned by
+  // concentration (ui.js buildTargetT scales t by confidence).
+  function updateHeat(tArr) {
     const lut = RAMPS[rampName];
     const data = heatImage.data;
-    const alphaFor = flat ? () => 26 : (t) => Math.round(255 * (0.06 + 0.82 * Math.pow(t, 1.3)));
+    const alphaFor = (t) => Math.round(255 * (0.045 + 0.875 * Math.pow(t, 1.8)));
     if (grid.shape === "square") {
       const n = grid.n;
       for (let j = 0; j < n; j++) {
