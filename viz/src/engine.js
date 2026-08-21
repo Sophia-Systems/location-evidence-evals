@@ -67,7 +67,7 @@ export const PRESETS = [
     id: "baseline",
     name: "Baseline",
     caption:
-      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -83,7 +83,7 @@ export const PRESETS = [
     id: "geometry",
     name: "Geometry",
     caption:
-      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -115,7 +115,7 @@ export const PRESETS = [
     id: "allowance",
     name: "The allowance",
     caption:
-      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -131,7 +131,7 @@ export const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate, probe all a few times, and the assessment is fooled -- raising its pi is the defense.",
+      "Declared Tallinn, actually St Petersburg: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and probe all a few times -- the map is fooled. (Raising its pi is the defense.)",
     declared: TALLINN,
     trueLocation: ST_PETERSBURG,
     attack: "inflation",

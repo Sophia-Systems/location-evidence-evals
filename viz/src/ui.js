@@ -1154,7 +1154,6 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
     $("#preset-caption").textContent = preset.caption;
-    $("#preset-caption").title = preset.caption; // full text on hover if clamped
 
     // anatomy panel accompanies preset 1
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";

@@ -206,13 +206,9 @@ body {
   font-size: 11.5px;
   color: var(--ink-faint);
   margin-top: 8px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* clamp to two lines: long captions (trust-staging notes, preset 5's
-     fabrication walkthrough) were silently ellipsized on one line */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* captions wrap fully -- no clamp, no ellipsis. The card has the room;
+     caption LENGTH is governed at the source (engine.js PRESETS keeps each
+     to one crisp sentence plus a short trust note, ~3 lines here). */
 }
 
 .scenario-actions {
@@ -2356,7 +2352,7 @@ const PRESETS = [
     id: "baseline",
     name: "Baseline",
     caption:
-      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -2372,7 +2368,7 @@ const PRESETS = [
     id: "geometry",
     name: "Geometry",
     caption:
-      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -2404,7 +2400,7 @@ const PRESETS = [
     id: "allowance",
     name: "The allowance",
     caption:
-      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted -- trust is what preset 3 explores.)",
+      "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -2420,7 +2416,7 @@ const PRESETS = [
     id: "evasive",
     name: "Evasive attester",
     caption:
-      "Declared Tallinn, actually St Petersburg. Honest anchors + zero allowance: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate, probe all a few times, and the assessment is fooled -- raising its pi is the defense.",
+      "Declared Tallinn, actually St Petersburg: padding cannot fake Tallinn. Flip the trusted Tallinn anchor to fabricate and probe all a few times -- the map is fooled. (Raising its pi is the defense.)",
     declared: TALLINN,
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
@@ -4527,7 +4523,6 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
     $("#preset-caption").textContent = preset.caption;
-    $("#preset-caption").title = preset.caption; // full text on hover if clamped
 
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";
 
