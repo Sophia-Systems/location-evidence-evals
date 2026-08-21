@@ -161,7 +161,21 @@ body {
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--ink-soft);
-  margin: 10px 0 0;
+  margin: 8px 0 0;
+}
+
+/* scenario chips + reset, one row */
+
+.chips-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chips-row .preset-chips {
+  margin-top: 0;
 }
 
 .blurb b {
@@ -190,6 +204,43 @@ body {
   margin: 2px 0;
   font-size: 11.5px;
   color: var(--ink-soft);
+}
+
+/* attester card: the machine under test, staged by the scenario */
+
+.attester-card {
+  flex: none;
+}
+
+.att-body {
+  padding: 8px 14px 10px;
+}
+
+.att-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 11.5px;
+}
+
+.att-lbl {
+  flex: none;
+  width: 82px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+
+.att-val {
+  flex: 1;
+  color: var(--ink-soft);
+}
+
+.att-reveal {
+  margin-top: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
 }
 
 /* evidence log: the accumulating set of signed receipts */
@@ -240,6 +291,9 @@ details.receipt {
   border-radius: 7px;
   background: var(--surface);
   overflow: hidden;
+  /* the list is a flex column: without this, several expanded receipts
+     shrink to share the space and their bodies overflow their borders */
+  flex: none;
 }
 
 details.receipt summary {
@@ -298,7 +352,8 @@ details.receipt pre {
   font: 500 10px var(--font-mono);
   line-height: 1.5;
   color: var(--ink-soft);
-  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .brand h1 {
@@ -307,13 +362,6 @@ details.receipt pre {
   letter-spacing: 0.01em;
   margin: 0;
   white-space: nowrap;
-}
-
-.brand .sub {
-  display: block;
-  font-size: 11px;
-  color: var(--ink-faint);
-  margin-top: 1px;
 }
 
 .brand h1 .mark {
@@ -364,14 +412,12 @@ details.receipt pre {
      to one crisp sentence plus a short trust note, ~3 lines here). */
 }
 
-.scenario-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
+details.fold .fold-body .credits {
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  color: var(--ink-faint);
 }
 
 /* parameters column: floating right side, collapsible, scrolls within

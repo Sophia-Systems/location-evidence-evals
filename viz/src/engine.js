@@ -75,6 +75,8 @@ export const PRESETS = [
     caption:
       "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. Try dragging an anchor, or lowering one's trust.",
     declared: CAMBRIDGE,
+    declaredName: "Cambridge, UK",
+    trueName: "Cambridge, UK",
     windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
@@ -92,6 +94,8 @@ export const PRESETS = [
     caption:
       "Declared Tallinn -- but the machine is actually in St Petersburg, padding its answers to look like Tallinn. Padding only ever adds time, so probability mass settles on the truth, not the claim.",
     declared: TALLINN,
+    declaredName: "Tallinn, Estonia",
+    trueName: "St Petersburg, Russia",
     trueLocation: ST_PETERSBURG,
     attack: "inflation",
     allowance: 0,
