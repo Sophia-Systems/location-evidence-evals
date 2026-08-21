@@ -212,3 +212,27 @@ following those.
     heat-canvas `drawImage` in render.js -- the per-cell alpha the field
     already encodes (structure/confidence, see ui.js `buildTargetT`) is
     untouched; opacity is a pure display multiplier on top of it.
+29. **Map geometry refresh; land-fill layer attempted and deliberately
+    skipped.** Regenerated `map-data.js` from Natural Earth 10m coastline /
+    admin-0-boundary-lines-land sources (was 50m) at Douglas-Peucker
+    tolerance 1.0 km (was 2.5 km), so zoomed-in views (up to 8x) show real
+    coastline detail instead of the 50m simplification's facets: 316 coast +
+    676 border polylines, 55.7 KB total, comfortably under the 250 KB budget
+    (raised from 150 KB). Also built the optional quiet land-fill layer
+    (`tools/make-map-data.mjs`: `processLandPolygons`, Sutherland-Hodgman
+    rectangle clip against `ne_50m_land`) end to end and rendered it to
+    `map-preview.svg` for visual review. It has a real bug: continental
+    Europe filled correctly but Scandinavia and the British Isles rendered
+    unfilled. Likely cause: clipping the (continent-spanning) Eurasian
+    landmass ring against the small display window produces zero-width
+    "bridge" edges where the ring exits and re-enters the window; running
+    Douglas-Peucker simplification AFTER clipping can collapse a bridge
+    (near-collinear points read as low perpendicular distance) in a way that
+    flips evenodd fill parity for an enclosed lobe. A correct fix needs
+    either a real polygon-clipping library with proper hole/winding
+    handling, or simplifying before clipping so bridge geometry survives
+    exactly -- out of scope for this pass. Per the build brief's own
+    guidance ("if clipping proves fiddly, skip the fill, keep lines"): the
+    land-fill code path is left in `make-map-data.mjs`, gated off by a
+    `SHIP_LAND_FILL = false` constant with the bug written up inline, and
+    `map-data.js` ships coastlines/borders only, no `LAND` export.

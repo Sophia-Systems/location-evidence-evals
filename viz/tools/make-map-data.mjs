@@ -27,21 +27,29 @@ const CLIP = 1350; // km
 // beyond this cannot contribute geometry near the window; it also guards
 // against spurious segments sweeping across the plane near the antipode.
 const RHO_MAX = 5000; // km
-const DP_TOLERANCE = 2.5; // km, Douglas-Peucker
+const DP_TOLERANCE = 1.0; // km, Douglas-Peucker (item 3: finer detail for zoomed viewing)
 const QUANTUM = 0.1; // km per integer unit
 const MIN_FRAGMENT_KM = 8; // drop tinier fragments
-const SIZE_BUDGET_BYTES = 150 * 1024;
+const SIZE_BUDGET_BYTES = 250 * 1024; // item 3: raised from 150 KB for 10m-source detail
 
+// item 3: switched from 50m to 10m sources so zoomed-in views (pan/zoom goes
+// to 8x) show real coastline detail instead of the 50m simplification's
+// facets. Same URL/host pattern family as before; 50m kept as a last-resort
+// fallback (safer than dropping to 110m if 10m is ever unavailable).
 const SOURCES = {
   coast: [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_coastline.geojson",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/physical/ne_10m_coastline.json",
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_coastline.geojson",
-    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_coastline.json",
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_coastline.geojson",
   ],
   borders: [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_boundary_lines_land.geojson",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/cultural/ne_10m_admin_0_boundary_lines_land.json",
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson",
-    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/cultural/ne_50m_admin_0_boundary_lines_land.json",
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_boundary_lines_land.geojson",
+  ],
+  land: [
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_land.json",
   ],
 };
 
@@ -127,6 +135,89 @@ function clipPolyline(points, extent) {
     if (t1 < 1) run = null;
   }
   return runs.filter((r) => r.length >= 2);
+}
+
+// --- land polygons (item 3: optional quiet land-fill layer) ---------------
+
+function* polygonRings(geojson) {
+  for (const feature of geojson.features ?? []) {
+    const g = feature.geometry;
+    if (!g) continue;
+    if (g.type === "Polygon") {
+      for (const ring of g.coordinates) yield ring;
+    } else if (g.type === "MultiPolygon") {
+      for (const poly of g.coordinates) for (const ring of poly) yield ring;
+    }
+  }
+}
+
+// Sutherland-Hodgman: clip a (possibly huge, possibly concave) polygon ring
+// against our small convex rectangle. Correct even when the subject ring
+// spans the whole globe (a continent's coastline): points far outside the
+// window need only be classified correctly as outside each of the four
+// half-planes, which azimuthal-equidistant projection preserves everywhere
+// except within the (here, irrelevant) mid-South-Pacific antipode of the
+// projection center. The output may include zero-area boundary-hugging
+// bridges where the ring dips in and out of the window multiple times; those
+// render correctly under the evenodd fill rule used in render.js.
+function clipEdge(poly, inside, intersect) {
+  if (poly.length === 0) return poly;
+  const out = [];
+  let prev = poly[poly.length - 1];
+  let prevIn = inside(prev);
+  for (const cur of poly) {
+    const curIn = inside(cur);
+    if (curIn) {
+      if (!prevIn) out.push(intersect(prev, cur));
+      out.push(cur);
+    } else if (prevIn) {
+      out.push(intersect(prev, cur));
+    }
+    prev = cur;
+    prevIn = curIn;
+  }
+  return out;
+}
+
+function clipPolygonToRect(points, ext) {
+  const xAt = (a, b, x) => [x, a[1] + ((x - a[0]) / (b[0] - a[0])) * (b[1] - a[1])];
+  const yAt = (a, b, y) => [a[0] + ((y - a[1]) / (b[1] - a[1])) * (b[0] - a[0]), y];
+  let p = points;
+  p = clipEdge(p, (pt) => pt[0] >= -ext, (a, b) => xAt(a, b, -ext));
+  p = clipEdge(p, (pt) => pt[0] <= ext, (a, b) => xAt(a, b, ext));
+  p = clipEdge(p, (pt) => pt[1] >= -ext, (a, b) => yAt(a, b, -ext));
+  p = clipEdge(p, (pt) => pt[1] <= ext, (a, b) => yAt(a, b, ext));
+  return p;
+}
+
+// Safe projection: real land vertices never land near the projection's
+// antipodal singularity (mid South Pacific, antipodal to 54N 13E), but guard
+// anyway so one freak coordinate can't corrupt a ring's structure.
+function projectSafe(lat, lon) {
+  const p = project(lat, lon);
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return { x: 1e7, y: 1e7 };
+  return p;
+}
+
+function processLandPolygons(geojson, tolerance) {
+  const encoded = [];
+  const stats = { rings: 0, kept: 0, points: 0 };
+  for (const ring of polygonRings(geojson)) {
+    stats.rings++;
+    const projected = ring.map(([lon, lat]) => {
+      const p = projectSafe(lat, lon);
+      return [p.x, p.y];
+    });
+    const clipped = clipPolygonToRect(projected, CLIP);
+    if (clipped.length < 3) continue;
+    const simplified = douglasPeucker(clipped, tolerance);
+    const q = quantize(simplified);
+    if (q.length < 3) continue;
+    encoded.push(encodePolyline(q));
+    stats.kept++;
+    stats.points += q.length;
+  }
+  return { encoded, stats };
 }
 
 // --- Douglas-Peucker -------------------------------------------------------
@@ -328,7 +419,7 @@ function svgPath(encodedList) {
   return parts.join("");
 }
 
-function makePreviewSvg(coast, borders) {
+function makePreviewSvg(coast, borders, land = []) {
   const size = CLIP * 2;
   const cityMarks = CITIES.map(([name, lat, lon]) => {
     const p = project(lat, lon);
@@ -344,6 +435,7 @@ function makePreviewSvg(coast, borders) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="900" height="900">
   <!-- generated by make-map-data.mjs; units are km on the display plane, y flipped -->
   <rect x="0" y="0" width="${size}" height="${size}" fill="#fbfbf9"/>
+  <path d="${svgPath(land)}" fill="#e4e6df" fill-rule="evenodd" stroke="none"/>
   <path d="${svgPath(coast)}" fill="none" stroke="#4a5a66" stroke-width="3"/>
   <path d="${svgPath(borders)}" fill="none" stroke="#b0a8a0" stroke-width="2.5" stroke-dasharray="12 10"/>
   <rect x="${domainOffset}" y="${domainOffset}" width="${HALF_EXTENT * 2}" height="${HALF_EXTENT * 2}" fill="none" stroke="#888" stroke-width="3" stroke-dasharray="24 16"/>
@@ -356,14 +448,27 @@ function makePreviewSvg(coast, borders) {
 
 // --- module emission -------------------------------------------------------
 
-function makeModule(coast, borders, meta) {
+function makeModule(coast, borders, land, meta) {
   const coastLines = coast.map((s) => `  ${JSON.stringify(s)},`).join("\n");
   const borderLines = borders.map((s) => `  ${JSON.stringify(s)},`).join("\n");
+  const landLines = land.map((s) => `  ${JSON.stringify(s)},`).join("\n");
+  const landBlock = land.length
+    ? `
+// Quiet land-fill polygons (item 3, optional): Natural Earth ne_50m_land,
+// clipped to the same window with Sutherland-Hodgman (handles the
+// continent-spanning subject rings; see make-map-data.mjs). Rings are
+// EITHER exterior or hole -- render with the evenodd fill rule so lake/inland
+// holes punch through correctly without tracking winding order.
+export const LAND = [
+${landLines}
+];
+`
+    : "";
   return `// map-data.js -- GENERATED, do not edit by hand. Regenerate with:
 //   node viz/tools/make-map-data.mjs
 //
 // Source: Natural Earth (public domain), ${meta.coastUrl}
-//         and ${meta.bordersUrl}
+//         and ${meta.bordersUrl}${meta.landUrl ? `\n//         and ${meta.landUrl} (land fill)` : ""}
 // Pipeline: each vertex projected with project() from viz/src/geo.js
 // (azimuthal equidistant, center ${meta.center}), clipped to x,y in
 // [-${CLIP}, ${CLIP}] km, Douglas-Peucker simplified at ${meta.tolerance} km,
@@ -381,6 +486,7 @@ ${coastLines}
 export const BORDERS = [
 ${borderLines}
 ];
+${landBlock}
 
 // Decode an array of encoded polylines to Array<Float32Array> of
 // [x0, y0, x1, y1, ...] in km on the display plane.
@@ -416,28 +522,63 @@ export function decodePolylines(encoded) {
 
 // --- main ------------------------------------------------------------------
 
+// Land-fill layer (item 3, optional): implemented below (processLandPolygons,
+// Sutherland-Hodgman clip) and it runs the full pipeline, but is NOT wired
+// into the shipped module. Visual inspection of map-preview.svg with it
+// enabled showed a real bug: Scandinavia and the British Isles rendered
+// unfilled while continental Europe filled correctly. Root cause, most
+// likely: Sutherland-Hodgman clipping the (huge, continent-spanning)
+// Eurasian landmass ring against our small window produces zero-width
+// "bridge" edges where the ring exits and re-enters the window; running
+// Douglas-Peucker simplification AFTER clipping can collapse those bridges
+// (their points sit near-collinear, so DP sees low perpendicular distance)
+// in a way that changes the ring's effective winding and flips evenodd
+// parity for some enclosed lobes. Fixing this properly needs either
+// per-feature (not per-ring-blob) clipping with a real polygon-clipping
+// library, or simplifying BEFORE clipping so the bridge geometry survives
+// exactly. Out of scope for this pass -- shipping broken geometry would be
+// worse than shipping quiet lines only. Kept here, disabled, so a future
+// pass has the scaffolding. See viz/DECISIONS.md item 30.
+const SHIP_LAND_FILL = false;
+
 async function main() {
-  const [coastSrc, bordersSrc] = await Promise.all([
+  const [coastSrc, bordersSrc, landSrc] = await Promise.all([
     fetchFirst(SOURCES.coast),
     fetchFirst(SOURCES.borders),
+    SHIP_LAND_FILL
+      ? fetchFirst(SOURCES.land).catch((err) => {
+          console.warn(`land source fetch failed, skipping land fill: ${err.message}`);
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
 
   let tolerance = DP_TOLERANCE;
   let coast;
   let borders;
+  let land = { encoded: [], stats: { rings: 0, kept: 0, points: 0 } };
+  let includeLand = landSrc != null;
   let moduleText;
   for (;;) {
     coast = processGeojson(coastSrc.json, tolerance);
     borders = processGeojson(bordersSrc.json, tolerance);
-    moduleText = makeModule(coast.encoded, borders.encoded, {
+    if (includeLand) land = processLandPolygons(landSrc.json, tolerance);
+    moduleText = makeModule(coast.encoded, borders.encoded, land.encoded, {
       coastUrl: coastSrc.url,
       bordersUrl: bordersSrc.url,
+      landUrl: includeLand ? landSrc.url : null,
       center: "54N 13E",
       tolerance,
       date: new Date().toISOString().slice(0, 10),
     });
     const bytes = Buffer.byteLength(moduleText);
     if (bytes <= SIZE_BUDGET_BYTES) break;
+    if (includeLand) {
+      console.warn(`module ${bytes} B over ${SIZE_BUDGET_BYTES} B budget; dropping the optional land-fill layer first`);
+      includeLand = false;
+      land = { encoded: [], stats: land.stats };
+      continue;
+    }
     tolerance *= 1.5;
     console.warn(`module ${bytes} B over ${SIZE_BUDGET_BYTES} B budget; raising tolerance to ${tolerance} km`);
     if (tolerance > 50) throw new Error("cannot meet size budget");
@@ -445,14 +586,21 @@ async function main() {
 
   const coastPoints = verify(coast.encoded, "COAST");
   const borderPoints = verify(borders.encoded, "BORDERS");
+  if (includeLand) verify(land.encoded, "LAND");
 
   await mkdir(path.dirname(OUT_MODULE), { recursive: true });
   await writeFile(OUT_MODULE, moduleText);
-  await writeFile(OUT_PREVIEW, makePreviewSvg(coast.encoded, borders.encoded));
+  await writeFile(OUT_PREVIEW, makePreviewSvg(coast.encoded, borders.encoded, land.encoded));
 
   const bytes = Buffer.byteLength(moduleText);
   console.log(`COAST:   ${coast.encoded.length} polylines, ${coastPoints} points, ${coast.stats.km.toFixed(0)} km`);
   console.log(`BORDERS: ${borders.encoded.length} polylines, ${borderPoints} points, ${borders.stats.km.toFixed(0)} km`);
+  console.log(
+    `LAND:    ${land.encoded.length} polygons, ${land.stats.points ?? 0} points` +
+      (includeLand
+        ? ""
+        : ` (skipped: ${SHIP_LAND_FILL ? "fetch failed or over size budget" : "disabled, see SHIP_LAND_FILL comment"})`)
+  );
   console.log(`tolerance: ${tolerance} km; module size: ${(bytes / 1024).toFixed(1)} KB`);
   console.log(`wrote ${OUT_MODULE}`);
   console.log(`wrote ${OUT_PREVIEW}`);
