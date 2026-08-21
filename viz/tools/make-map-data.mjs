@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // make-map-data.mjs -- generator for viz/src/map-data.js and viz/tools/map-preview.svg.
 //
-// Fetches Natural Earth coastline + admin-0 boundary GeoJSON (network use is fine
-// HERE; the runtime page makes zero requests), projects every vertex through
-// project() from viz/src/geo.js, clips to the display square, simplifies with
-// Douglas-Peucker, quantizes to 0.1 km integers, and emits a self-contained ESM
-// module with polyline-encoded COAST and BORDERS.
+// v2 (global display): fetches Natural Earth 50m coastline + admin-0 boundary
+// GeoJSON, simplifies with Douglas-Peucker in lon/lat degrees, quantizes, and
+// emits a self-contained ESM module with polyline-encoded global COAST and
+// BORDERS plus a small MAJOR-CITY set. Coordinates are stored as lon/lat
+// degrees (documented choice: projection-agnostic; the renderer converts to
+// Web Mercator world units once at startup). This layer is the OFFLINE
+// FALLBACK under the tile basemap -- small matters more than detail, so the
+// tolerance auto-raises until the module fits the size budget.
 //
 // Usage: node viz/tools/make-map-data.mjs
 //
@@ -14,44 +17,88 @@
 import { writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { project, HALF_EXTENT } from "../src/geo.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT_MODULE = path.join(HERE, "..", "src", "map-data.js");
 const OUT_PREVIEW = path.join(HERE, "map-preview.svg");
 
-// Clip square: small margin past the 1300 km domain so strokes reach the frame.
-const CLIP = 1350; // km
-// Drop projected points farther than this from center before clipping: on an
-// azimuthal equidistant plane, rho is true distance from center, so anything
-// beyond this cannot contribute geometry near the window; it also guards
-// against spurious segments sweeping across the plane near the antipode.
-const RHO_MAX = 5000; // km
-const DP_TOLERANCE = 1.0; // km, Douglas-Peucker (item 3: finer detail for zoomed viewing)
-const QUANTUM = 0.1; // km per integer unit
-const MIN_FRAGMENT_KM = 8; // drop tinier fragments
-const SIZE_BUDGET_BYTES = 250 * 1024; // item 3: raised from 150 KB for 10m-source detail
+const DP_TOLERANCE = 0.05; // degrees, Douglas-Peucker starting tolerance
+const QUANTUM = 0.01; // degrees per integer unit (~1.1 km N-S)
+const MIN_FRAGMENT_DEG = 0.15; // drop tinier fragments (~17 km)
+const SIZE_BUDGET_BYTES = 350 * 1024; // v2 brief: <= ~350 KB, raise tolerance until under
 
-// item 3: switched from 50m to 10m sources so zoomed-in views (pan/zoom goes
-// to 8x) show real coastline detail instead of the 50m simplification's
-// facets. Same URL/host pattern family as before; 50m kept as a last-resort
-// fallback (safer than dropping to 110m if 10m is ever unavailable).
+// 50m sources (v2 brief): the offline fallback trades the 10m detail of the
+// v1 window map for global coverage at a small size; tiles carry detail when
+// online. 110m kept as a last-resort fallback.
 const SOURCES = {
   coast: [
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_coastline.geojson",
-    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/physical/ne_10m_coastline.json",
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_coastline.geojson",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_coastline.json",
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_coastline.geojson",
   ],
   borders: [
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_boundary_lines_land.geojson",
-    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/10m/cultural/ne_10m_admin_0_boundary_lines_land.json",
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_boundary_lines_land.geojson",
-  ],
-  land: [
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson",
-    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_land.json",
+    "https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/cultural/ne_50m_admin_0_boundary_lines_land.json",
+    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_boundary_lines_land.geojson",
   ],
 };
+
+// Major-city set for the offline fallback ONLY (Positron tiles carry their
+// own labels; never double-label). The current facility cities plus obvious
+// global ones, ~40 total, favoring wide geographic spread.
+const MAJOR_CITIES = [
+  // facility / demo cities (the measurement testbed's geography)
+  ["London", 51.507, -0.128],
+  ["Paris", 48.857, 2.352],
+  ["Dublin", 53.35, -6.26],
+  ["Frankfurt", 50.111, 8.682],
+  ["Stockholm", 59.329, 18.069],
+  ["Helsinki", 60.17, 24.938],
+  ["Tallinn", 59.437, 24.754],
+  ["St Petersburg", 59.931, 30.361],
+  // Europe
+  ["Madrid", 40.417, -3.703],
+  ["Rome", 41.893, 12.483],
+  ["Berlin", 52.52, 13.405],
+  ["Warsaw", 52.23, 21.011],
+  ["Kyiv", 50.45, 30.523],
+  ["Moscow", 55.756, 37.617],
+  ["Istanbul", 41.008, 28.978],
+  ["Reykjavik", 64.147, -21.942],
+  // Middle East & Africa
+  ["Dubai", 25.204, 55.271],
+  ["Cairo", 30.044, 31.236],
+  ["Lagos", 6.524, 3.379],
+  ["Nairobi", -1.292, 36.822],
+  ["Johannesburg", -26.204, 28.047],
+  // Asia
+  ["Mumbai", 19.076, 72.878],
+  ["Delhi", 28.614, 77.209],
+  ["Singapore", 1.352, 103.82],
+  ["Bangkok", 13.756, 100.502],
+  ["Jakarta", -6.208, 106.846],
+  ["Hong Kong", 22.319, 114.169],
+  ["Shanghai", 31.23, 121.474],
+  ["Beijing", 39.904, 116.407],
+  ["Seoul", 37.566, 126.978],
+  ["Tokyo", 35.676, 139.65],
+  // Oceania
+  ["Sydney", -33.869, 151.209],
+  ["Auckland", -36.849, 174.763],
+  ["Perth", -31.95, 115.86],
+  // Americas
+  ["New York", 40.713, -74.006],
+  ["Toronto", 43.653, -79.383],
+  ["Chicago", 41.878, -87.63],
+  ["San Francisco", 37.775, -122.419],
+  ["Los Angeles", 34.052, -118.244],
+  ["Mexico City", 19.433, -99.133],
+  ["Bogota", 4.711, -74.072],
+  ["Lima", -12.046, -77.043],
+  ["Sao Paulo", -23.551, -46.633],
+  ["Buenos Aires", -34.604, -58.382],
+  ["Santiago", -33.449, -70.669],
+];
 
 async function fetchFirst(urls) {
   let lastErr;
@@ -83,144 +130,25 @@ function* lineStrings(geojson) {
   }
 }
 
-// --- clipping (Liang-Barsky per segment, joined into runs) ----------------
-
-function clipSegment(x0, y0, x1, y1, min, max) {
-  let t0 = 0;
-  let t1 = 1;
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const checks = [
-    [-dx, x0 - min],
-    [dx, max - x0],
-    [-dy, y0 - min],
-    [dy, max - y0],
-  ];
-  for (const [p, q] of checks) {
-    if (p === 0) {
-      if (q < 0) return null;
-    } else {
-      const r = q / p;
-      if (p < 0) {
-        if (r > t1) return null;
-        if (r > t0) t0 = r;
-      } else {
-        if (r < t0) return null;
-        if (r < t1) t1 = r;
-      }
+// Split a lon/lat polyline wherever consecutive vertices jump more than 180
+// degrees of longitude (an antimeridian wrap): the renderer draws in a single
+// Mercator world copy, so a wrapping segment would streak across the map.
+// Natural Earth lines are already cut at +-180; this is a safety net.
+function splitAntimeridian(coords) {
+  const chunks = [];
+  let chunk = [coords[0]];
+  for (let i = 1; i < coords.length; i++) {
+    if (Math.abs(coords[i][0] - coords[i - 1][0]) > 180) {
+      if (chunk.length >= 2) chunks.push(chunk);
+      chunk = [];
     }
+    chunk.push(coords[i]);
   }
-  return [x0 + t0 * dx, y0 + t0 * dy, x0 + t1 * dx, y0 + t1 * dy, t0, t1];
+  if (chunk.length >= 2) chunks.push(chunk);
+  return chunks;
 }
 
-// Clip a projected polyline ([{x,y},...]) to the square, returning an array of
-// polylines (the clip can cut one line into several runs).
-function clipPolyline(points, extent) {
-  const runs = [];
-  let run = null;
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i];
-    const b = points[i + 1];
-    const seg = clipSegment(a.x, a.y, b.x, b.y, -extent, extent);
-    if (!seg) {
-      run = null;
-      continue;
-    }
-    const [cx0, cy0, cx1, cy1, t0, t1] = seg;
-    if (run === null || t0 > 0) {
-      run = [[cx0, cy0]];
-      runs.push(run);
-    }
-    run.push([cx1, cy1]);
-    if (t1 < 1) run = null;
-  }
-  return runs.filter((r) => r.length >= 2);
-}
-
-// --- land polygons (item 3: optional quiet land-fill layer) ---------------
-
-function* polygonRings(geojson) {
-  for (const feature of geojson.features ?? []) {
-    const g = feature.geometry;
-    if (!g) continue;
-    if (g.type === "Polygon") {
-      for (const ring of g.coordinates) yield ring;
-    } else if (g.type === "MultiPolygon") {
-      for (const poly of g.coordinates) for (const ring of poly) yield ring;
-    }
-  }
-}
-
-// Sutherland-Hodgman: clip a (possibly huge, possibly concave) polygon ring
-// against our small convex rectangle. Correct even when the subject ring
-// spans the whole globe (a continent's coastline): points far outside the
-// window need only be classified correctly as outside each of the four
-// half-planes, which azimuthal-equidistant projection preserves everywhere
-// except within the (here, irrelevant) mid-South-Pacific antipode of the
-// projection center. The output may include zero-area boundary-hugging
-// bridges where the ring dips in and out of the window multiple times; those
-// render correctly under the evenodd fill rule used in render.js.
-function clipEdge(poly, inside, intersect) {
-  if (poly.length === 0) return poly;
-  const out = [];
-  let prev = poly[poly.length - 1];
-  let prevIn = inside(prev);
-  for (const cur of poly) {
-    const curIn = inside(cur);
-    if (curIn) {
-      if (!prevIn) out.push(intersect(prev, cur));
-      out.push(cur);
-    } else if (prevIn) {
-      out.push(intersect(prev, cur));
-    }
-    prev = cur;
-    prevIn = curIn;
-  }
-  return out;
-}
-
-function clipPolygonToRect(points, ext) {
-  const xAt = (a, b, x) => [x, a[1] + ((x - a[0]) / (b[0] - a[0])) * (b[1] - a[1])];
-  const yAt = (a, b, y) => [a[0] + ((y - a[1]) / (b[1] - a[1])) * (b[0] - a[0]), y];
-  let p = points;
-  p = clipEdge(p, (pt) => pt[0] >= -ext, (a, b) => xAt(a, b, -ext));
-  p = clipEdge(p, (pt) => pt[0] <= ext, (a, b) => xAt(a, b, ext));
-  p = clipEdge(p, (pt) => pt[1] >= -ext, (a, b) => yAt(a, b, -ext));
-  p = clipEdge(p, (pt) => pt[1] <= ext, (a, b) => yAt(a, b, ext));
-  return p;
-}
-
-// Safe projection: real land vertices never land near the projection's
-// antipodal singularity (mid South Pacific, antipodal to 54N 13E), but guard
-// anyway so one freak coordinate can't corrupt a ring's structure.
-function projectSafe(lat, lon) {
-  const p = project(lat, lon);
-  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return { x: 1e7, y: 1e7 };
-  return p;
-}
-
-function processLandPolygons(geojson, tolerance) {
-  const encoded = [];
-  const stats = { rings: 0, kept: 0, points: 0 };
-  for (const ring of polygonRings(geojson)) {
-    stats.rings++;
-    const projected = ring.map(([lon, lat]) => {
-      const p = projectSafe(lat, lon);
-      return [p.x, p.y];
-    });
-    const clipped = clipPolygonToRect(projected, CLIP);
-    if (clipped.length < 3) continue;
-    const simplified = douglasPeucker(clipped, tolerance);
-    const q = quantize(simplified);
-    if (q.length < 3) continue;
-    encoded.push(encodePolyline(q));
-    stats.kept++;
-    stats.points += q.length;
-  }
-  return { encoded, stats };
-}
-
-// --- Douglas-Peucker -------------------------------------------------------
+// --- Douglas-Peucker (in degrees) ------------------------------------------
 
 function perpDistance(p, a, b) {
   const dx = b[0] - a[0];
@@ -275,7 +203,7 @@ function quantize(points) {
   return out;
 }
 
-function polylineLengthKm(qpoints) {
+function polylineLengthDeg(qpoints) {
   let len = 0;
   for (let i = 1; i < qpoints.length; i++) {
     len += Math.hypot(
@@ -340,32 +268,16 @@ function decodePolyline(str) {
 
 function processGeojson(geojson, tolerance) {
   const encoded = [];
-  const stats = { inputLines: 0, points: 0, km: 0 };
+  const stats = { inputLines: 0, points: 0 };
   for (const coords of lineStrings(geojson)) {
     stats.inputLines++;
-    // Project; split wherever a vertex lands beyond RHO_MAX (far-side guard).
-    let chunk = [];
-    const chunks = [chunk];
-    for (const [lon, lat] of coords) {
-      const p = project(lat, lon);
-      if (Math.hypot(p.x, p.y) > RHO_MAX) {
-        if (chunk.length) chunks.push((chunk = []));
-        continue;
-      }
-      chunk.push(p);
-    }
-    for (const ch of chunks) {
-      if (ch.length < 2) continue;
-      for (const run of clipPolyline(ch, CLIP)) {
-        const simplified = douglasPeucker(run, tolerance);
-        const q = quantize(simplified);
-        if (q.length < 2) continue;
-        const lenKm = polylineLengthKm(q);
-        if (lenKm < MIN_FRAGMENT_KM) continue;
-        encoded.push(encodePolyline(q));
-        stats.points += q.length;
-        stats.km += lenKm;
-      }
+    for (const chunk of splitAntimeridian(coords)) {
+      const simplified = douglasPeucker(chunk, tolerance);
+      const q = quantize(simplified);
+      if (q.length < 2) continue;
+      if (polylineLengthDeg(q) < MIN_FRAGMENT_DEG) continue;
+      encoded.push(encodePolyline(q));
+      stats.points += q.length;
     }
   }
   return { encoded, stats };
@@ -378,11 +290,12 @@ function verify(encodedList, label) {
     if (flat.length < 4 || flat.length % 2 !== 0) {
       throw new Error(`${label}: bad decoded length ${flat.length}`);
     }
-    for (let i = 0; i < flat.length; i++) {
-      const v = flat[i];
-      if (!Number.isFinite(v)) throw new Error(`${label}: non-finite coordinate`);
-      if (Math.abs(v) > CLIP + QUANTUM) {
-        throw new Error(`${label}: coordinate ${v} outside +-${CLIP}`);
+    for (let i = 0; i < flat.length; i += 2) {
+      const lon = flat[i];
+      const lat = flat[i + 1];
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) throw new Error(`${label}: non-finite coordinate`);
+      if (Math.abs(lon) > 180 + QUANTUM || Math.abs(lat) > 90 + QUANTUM) {
+        throw new Error(`${label}: coordinate (${lon}, ${lat}) out of range`);
       }
     }
     points += flat.length / 2;
@@ -390,28 +303,16 @@ function verify(encodedList, label) {
   return points;
 }
 
-// --- preview SVG -----------------------------------------------------------
+// --- preview SVG (plate carree, for eyeballing) ----------------------------
 
-const CITIES = [
-  ["London", 51.5074, -0.1278],
-  ["Paris", 48.8566, 2.3522],
-  ["Dublin", 53.3498, -6.2603],
-  ["Frankfurt", 50.1109, 8.6821],
-  ["Stockholm", 59.3293, 18.0686],
-  ["Helsinki", 60.1699, 24.9384],
-  ["Tallinn", 59.437, 24.7536],
-  ["St Petersburg", 59.9311, 30.3609],
-  ["Cambridge", 52.2053, 0.1218],
-];
-
-function svgPath(encodedList) {
+function svgPath(encodedList, scale) {
   const parts = [];
   for (const str of encodedList) {
     const flat = decodePolyline(str);
     let d = "";
     for (let i = 0; i < flat.length; i += 2) {
-      const sx = (flat[i] + CLIP).toFixed(1);
-      const sy = (CLIP - flat[i + 1]).toFixed(1); // y north-up -> svg y down
+      const sx = ((flat[i] + 180) * scale).toFixed(1);
+      const sy = ((90 - flat[i + 1]) * scale).toFixed(1);
       d += (i === 0 ? "M" : "L") + sx + " " + sy;
     }
     parts.push(d);
@@ -419,64 +320,52 @@ function svgPath(encodedList) {
   return parts.join("");
 }
 
-function makePreviewSvg(coast, borders, land = []) {
-  const size = CLIP * 2;
-  const cityMarks = CITIES.map(([name, lat, lon]) => {
-    const p = project(lat, lon);
-    const sx = p.x + CLIP;
-    const sy = CLIP - p.y;
+function makePreviewSvg(coast, borders) {
+  const scale = 8; // px per degree
+  const w = 360 * scale;
+  const h = 180 * scale;
+  const cityMarks = MAJOR_CITIES.map(([name, lat, lon]) => {
+    const sx = (lon + 180) * scale;
+    const sy = (90 - lat) * scale;
     return (
-      `<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="10" fill="#006a4e"/>` +
-      `<text x="${(sx + 18).toFixed(1)}" y="${(sy + 8).toFixed(1)}" ` +
-      `font-family="sans-serif" font-size="42" fill="#1a1a1a">${name}</text>`
+      `<circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4" fill="#006a4e"/>` +
+      `<text x="${(sx + 7).toFixed(1)}" y="${(sy + 4).toFixed(1)}" ` +
+      `font-family="sans-serif" font-size="14" fill="#1a1a1a">${name}</text>`
     );
   }).join("\n  ");
-  const domainOffset = CLIP - HALF_EXTENT;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="900" height="900">
-  <!-- generated by make-map-data.mjs; units are km on the display plane, y flipped -->
-  <rect x="0" y="0" width="${size}" height="${size}" fill="#fbfbf9"/>
-  <path d="${svgPath(land)}" fill="#e4e6df" fill-rule="evenodd" stroke="none"/>
-  <path d="${svgPath(coast)}" fill="none" stroke="#4a5a66" stroke-width="3"/>
-  <path d="${svgPath(borders)}" fill="none" stroke="#b0a8a0" stroke-width="2.5" stroke-dasharray="12 10"/>
-  <rect x="${domainOffset}" y="${domainOffset}" width="${HALF_EXTENT * 2}" height="${HALF_EXTENT * 2}" fill="none" stroke="#888" stroke-width="3" stroke-dasharray="24 16"/>
-  <rect x="0.5" y="0.5" width="${size - 1}" height="${size - 1}" fill="none" stroke="#333" stroke-width="1"/>
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="1440" height="720">
+  <!-- generated by make-map-data.mjs; plate carree, ${scale} px per degree -->
+  <rect x="0" y="0" width="${w}" height="${h}" fill="#fbfbf9"/>
+  <path d="${svgPath(coast, scale)}" fill="none" stroke="#4a5a66" stroke-width="1"/>
+  <path d="${svgPath(borders, scale)}" fill="none" stroke="#b0a8a0" stroke-width="0.8"/>
   ${cityMarks}
-  <text x="30" y="${size - 30}" font-family="sans-serif" font-size="42" fill="#666">clip frame +-${CLIP} km; inner dashed frame: domain +-${HALF_EXTENT} km</text>
 </svg>
 `;
 }
 
 // --- module emission -------------------------------------------------------
 
-function makeModule(coast, borders, land, meta) {
+function makeModule(coast, borders, meta) {
   const coastLines = coast.map((s) => `  ${JSON.stringify(s)},`).join("\n");
   const borderLines = borders.map((s) => `  ${JSON.stringify(s)},`).join("\n");
-  const landLines = land.map((s) => `  ${JSON.stringify(s)},`).join("\n");
-  const landBlock = land.length
-    ? `
-// Quiet land-fill polygons (item 3, optional): Natural Earth ne_50m_land,
-// clipped to the same window with Sutherland-Hodgman (handles the
-// continent-spanning subject rings; see make-map-data.mjs). Rings are
-// EITHER exterior or hole -- render with the evenodd fill rule so lake/inland
-// holes punch through correctly without tracking winding order.
-export const LAND = [
-${landLines}
-];
-`
-    : "";
+  const cityLines = MAJOR_CITIES.map(
+    ([name, lat, lon]) => `  { name: ${JSON.stringify(name)}, lat: ${lat}, lon: ${lon} },`
+  ).join("\n");
   return `// map-data.js -- GENERATED, do not edit by hand. Regenerate with:
 //   node viz/tools/make-map-data.mjs
 //
 // Source: Natural Earth (public domain), ${meta.coastUrl}
-//         and ${meta.bordersUrl}${meta.landUrl ? `\n//         and ${meta.landUrl} (land fill)` : ""}
-// Pipeline: each vertex projected with project() from viz/src/geo.js
-// (azimuthal equidistant, center ${meta.center}), clipped to x,y in
-// [-${CLIP}, ${CLIP}] km, Douglas-Peucker simplified at ${meta.tolerance} km,
-// quantized to ${QUANTUM} km integer units, fragments under ${MIN_FRAGMENT_KM} km dropped.
+//         and ${meta.bordersUrl}
+// Pipeline: global lon/lat polylines, split at the antimeridian,
+// Douglas-Peucker simplified at ${meta.tolerance} degrees, quantized to
+// ${QUANTUM} degree integer units, fragments under ${MIN_FRAGMENT_DEG} degrees dropped.
 //
-// Encoding: per polyline, a Google-polyline-style string -- signed integer
-// deltas of the quantized (x, y) pairs, zigzag-encoded, 5 bits per char,
-// char codes 63..126. decodePolylines() returns km on the display plane.
+// This layer is the OFFLINE FALLBACK beneath the tile basemap (and the
+// placeholder while tiles load): coordinates are stored as lon/lat degrees
+// -- projection-agnostic; the renderer converts to its display projection
+// once at startup. Encoding: per polyline, a Google-polyline-style string --
+// signed integer deltas of the quantized (lon, lat) pairs, zigzag-encoded,
+// 5 bits per char, char codes 63..126.
 // Generated ${meta.date}.
 
 export const COAST = [
@@ -486,10 +375,15 @@ ${coastLines}
 export const BORDERS = [
 ${borderLines}
 ];
-${landBlock}
+
+// Major cities, rendered as subtle dot+label ONLY in offline-fallback mode
+// (the tile basemap carries its own labels; never double-label).
+export const CITIES = [
+${cityLines}
+];
 
 // Decode an array of encoded polylines to Array<Float32Array> of
-// [x0, y0, x1, y1, ...] in km on the display plane.
+// [lon0, lat0, lon1, lat1, ...] in degrees.
 export function decodePolylines(encoded) {
   return encoded.map((str) => {
     const vals = [];
@@ -522,86 +416,44 @@ export function decodePolylines(encoded) {
 
 // --- main ------------------------------------------------------------------
 
-// Land-fill layer (item 3, optional): implemented below (processLandPolygons,
-// Sutherland-Hodgman clip) and it runs the full pipeline, but is NOT wired
-// into the shipped module. Visual inspection of map-preview.svg with it
-// enabled showed a real bug: Scandinavia and the British Isles rendered
-// unfilled while continental Europe filled correctly. Root cause, most
-// likely: Sutherland-Hodgman clipping the (huge, continent-spanning)
-// Eurasian landmass ring against our small window produces zero-width
-// "bridge" edges where the ring exits and re-enters the window; running
-// Douglas-Peucker simplification AFTER clipping can collapse those bridges
-// (their points sit near-collinear, so DP sees low perpendicular distance)
-// in a way that changes the ring's effective winding and flips evenodd
-// parity for some enclosed lobes. Fixing this properly needs either
-// per-feature (not per-ring-blob) clipping with a real polygon-clipping
-// library, or simplifying BEFORE clipping so the bridge geometry survives
-// exactly. Out of scope for this pass -- shipping broken geometry would be
-// worse than shipping quiet lines only. Kept here, disabled, so a future
-// pass has the scaffolding. See viz/DECISIONS.md item 30.
-const SHIP_LAND_FILL = false;
-
 async function main() {
-  const [coastSrc, bordersSrc, landSrc] = await Promise.all([
+  const [coastSrc, bordersSrc] = await Promise.all([
     fetchFirst(SOURCES.coast),
     fetchFirst(SOURCES.borders),
-    SHIP_LAND_FILL
-      ? fetchFirst(SOURCES.land).catch((err) => {
-          console.warn(`land source fetch failed, skipping land fill: ${err.message}`);
-          return null;
-        })
-      : Promise.resolve(null),
   ]);
 
   let tolerance = DP_TOLERANCE;
   let coast;
   let borders;
-  let land = { encoded: [], stats: { rings: 0, kept: 0, points: 0 } };
-  let includeLand = landSrc != null;
   let moduleText;
   for (;;) {
     coast = processGeojson(coastSrc.json, tolerance);
     borders = processGeojson(bordersSrc.json, tolerance);
-    if (includeLand) land = processLandPolygons(landSrc.json, tolerance);
-    moduleText = makeModule(coast.encoded, borders.encoded, land.encoded, {
+    moduleText = makeModule(coast.encoded, borders.encoded, {
       coastUrl: coastSrc.url,
       bordersUrl: bordersSrc.url,
-      landUrl: includeLand ? landSrc.url : null,
-      center: "54N 13E",
       tolerance,
       date: new Date().toISOString().slice(0, 10),
     });
     const bytes = Buffer.byteLength(moduleText);
     if (bytes <= SIZE_BUDGET_BYTES) break;
-    if (includeLand) {
-      console.warn(`module ${bytes} B over ${SIZE_BUDGET_BYTES} B budget; dropping the optional land-fill layer first`);
-      includeLand = false;
-      land = { encoded: [], stats: land.stats };
-      continue;
-    }
     tolerance *= 1.5;
-    console.warn(`module ${bytes} B over ${SIZE_BUDGET_BYTES} B budget; raising tolerance to ${tolerance} km`);
-    if (tolerance > 50) throw new Error("cannot meet size budget");
+    console.warn(`module ${bytes} B over ${SIZE_BUDGET_BYTES} B budget; raising tolerance to ${tolerance} deg`);
+    if (tolerance > 5) throw new Error("cannot meet size budget");
   }
 
   const coastPoints = verify(coast.encoded, "COAST");
   const borderPoints = verify(borders.encoded, "BORDERS");
-  if (includeLand) verify(land.encoded, "LAND");
 
   await mkdir(path.dirname(OUT_MODULE), { recursive: true });
   await writeFile(OUT_MODULE, moduleText);
-  await writeFile(OUT_PREVIEW, makePreviewSvg(coast.encoded, borders.encoded, land.encoded));
+  await writeFile(OUT_PREVIEW, makePreviewSvg(coast.encoded, borders.encoded));
 
   const bytes = Buffer.byteLength(moduleText);
-  console.log(`COAST:   ${coast.encoded.length} polylines, ${coastPoints} points, ${coast.stats.km.toFixed(0)} km`);
-  console.log(`BORDERS: ${borders.encoded.length} polylines, ${borderPoints} points, ${borders.stats.km.toFixed(0)} km`);
-  console.log(
-    `LAND:    ${land.encoded.length} polygons, ${land.stats.points ?? 0} points` +
-      (includeLand
-        ? ""
-        : ` (skipped: ${SHIP_LAND_FILL ? "fetch failed or over size budget" : "disabled, see SHIP_LAND_FILL comment"})`)
-  );
-  console.log(`tolerance: ${tolerance} km; module size: ${(bytes / 1024).toFixed(1)} KB`);
+  console.log(`COAST:   ${coast.encoded.length} polylines, ${coastPoints} points`);
+  console.log(`BORDERS: ${borders.encoded.length} polylines, ${borderPoints} points`);
+  console.log(`CITIES:  ${MAJOR_CITIES.length}`);
+  console.log(`tolerance: ${tolerance} deg; module size: ${(bytes / 1024).toFixed(1)} KB`);
   console.log(`wrote ${OUT_MODULE}`);
   console.log(`wrote ${OUT_PREVIEW}`);
 }

@@ -137,11 +137,24 @@ export function createRenderer(canvas) {
   const isDefaultView = () => viewScale === 1 && viewCenter.x === 0 && viewCenter.y === 0;
 
   // ---- base map (Path2D in km space, built once) ---------------------------
+  // Transitional (v2 step b): map-data is now GLOBAL lon/lat polylines; this
+  // projects them onto the current azimuthal window plane, dropping geometry
+  // far outside it. Replaced wholesale by the Mercator view in step c.
   function buildPaths(encoded) {
     const path = new Path2D();
     for (const line of decodePolylines(encoded)) {
-      path.moveTo(line[0], -line[1]);
-      for (let i = 1; i < line.length / 2; i++) path.lineTo(line[2 * i], -line[2 * i + 1]);
+      let pen = false;
+      for (let i = 0; i < line.length / 2; i++) {
+        const p = project(line[2 * i + 1], line[2 * i]);
+        if (Math.hypot(p.x, p.y) > 4000) {
+          pen = false;
+          continue;
+        }
+        if (!pen) {
+          path.moveTo(p.x, -p.y);
+          pen = true;
+        } else path.lineTo(p.x, -p.y);
+      }
     }
     return path;
   }
