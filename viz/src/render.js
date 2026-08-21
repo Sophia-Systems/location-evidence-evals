@@ -441,10 +441,10 @@ export function createRenderer(canvas) {
   // which paints the wrapped half on the correct side.
   function circlePath(lat, lon, radiusKm) {
     const path = new Path2D();
+    let firstWx = null;
     let prevWx = null;
     let minWx = Infinity;
     let maxWx = -Infinity;
-    let first = true;
     for (let b = 0; b <= 360; b += 2) {
       const p = destination(lat, lon, b, radiusKm);
       let wx = lonToWorldX(p.lon);
@@ -457,13 +457,19 @@ export function createRenderer(canvas) {
       if (wx < minWx) minWx = wx;
       if (wx > maxWx) maxWx = wx;
       const [px, py] = worldToCss(wx, wy);
-      if (first) {
+      if (firstWx == null) {
+        firstWx = wx;
         path.moveTo(px, py);
-        first = false;
       } else path.lineTo(px, py);
     }
-    path.closePath();
-    return { path, wraps: minWx < 0 || maxWx > WORLD };
+    // A circle that ENCLOSES a pole winds once around all longitudes: its
+    // unwrapped endpoints sit a world-width apart, and closing the path
+    // would draw a spurious straight chord across the map. Leave wound
+    // circles open (the shifted re-strokes make them visually continuous);
+    // close ordinary ones.
+    const wound = Math.abs(prevWx - firstWx) > WORLD / 2;
+    if (!wound) path.closePath();
+    return { path, wraps: wound || minWx < 0 || maxWx > WORLD };
   }
 
   function strokeWrapped(circle) {
