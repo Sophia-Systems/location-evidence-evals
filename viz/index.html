@@ -5940,9 +5940,14 @@ function wantsStory() {
   return window.matchMedia("(max-width: 760px)").matches;
 }
 
+function storyUrl() {
+  const p = location.pathname;
+  return p.endsWith(".html") ? "./story.html" : `${p.replace(/\/+$/, "")}/story.html`;
+}
+
 function boot() {
   if (wantsStory()) {
-    location.replace("./story.html");
+    location.replace(storyUrl());
     return;
   }
   buildApp(document.getElementById("root"));
