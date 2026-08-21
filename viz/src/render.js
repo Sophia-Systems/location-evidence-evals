@@ -29,6 +29,102 @@ import { RAMPS } from "./ramps.js";
 
 const EARTH_CIRC_KM = 40075.017; // equatorial circumference, km
 
+// ---------------------------------------------------------------------------
+// Default-view fit (DECISIONS.md item 42, superseding item 41's rule).
+// Pure Mercator math, exported so the test suite can verify the framing
+// geometry per preset without a DOM.
+// ---------------------------------------------------------------------------
+
+// Target margin between the framed points' bbox and the viewport edge, as a
+// fraction of the viewport span per side. Compresses adaptively (down to
+// FRAME_MIN via the cover clamp) when the window boundary would otherwise
+// intrude -- see computeViewFit.
+export const FRAME_MARGIN = 0.15;
+// Inset factor on the boundary-cover clamp while framing points: the nearest
+// window-boundary point ends up ~2.5% of the viewport span beyond the edge.
+// Tighter than WINDOW_INSET because it competes with anchor visibility.
+export const FRAME_INSET = 1.05;
+// Item-41 inset for the no-points cover fit ("evaluate here", free framing):
+// nearest boundary ~7.5% of the viewport span beyond the edge.
+export const WINDOW_INSET = 1.15;
+
+// Sample the evaluation window's boundary (the HALF_EXTENT square on the
+// azimuthal plane around `center`) into Mercator world-unit points. The
+// square's edges bow inward in Mercator near the corners, so every fit is
+// computed against these samples, never against a bbox.
+export function sampleWindowBoundary(center) {
+  const SAMPLES = 48; // per edge
+  const pts = [];
+  const edge = (x0, y0, x1, y1) => {
+    for (let i = 0; i < SAMPLES; i++) {
+      const t = i / SAMPLES;
+      const ll = unprojectAt(center, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+      pts.push([lonToWorldX(ll.lon), latToWorldY(ll.lat)]);
+    }
+  };
+  const E = HALF_EXTENT;
+  edge(-E, E, E, E); // north edge, west->east
+  edge(E, E, E, -E); // east edge
+  edge(E, -E, -E, -E); // south edge
+  edge(-E, -E, -E, E); // west edge
+  return pts;
+}
+
+// Compute the default view for a wCss x hCss viewport over the window at
+// `center`. With `points` (framed lat/lons: the preset's anchors plus the
+// declared marker), the view centers on their bbox midpoint at scale
+//   s = min(max(frame@FRAME_MARGIN, cover x FRAME_INSET), frame@0)
+// -- frame the points with the target margin; if the window boundary would
+// intrude at that scale, zoom in just enough to hide it (the margin
+// compresses); never past the zero-margin frame, so the points themselves
+// stay on-screen. Without points, the item-41 inset cover fit on the window
+// center. `cover` is, per boundary sample, the minimal scale pushing it
+// off-screen -- min(w/2|dx|, h/2|dy|) -- maximized over samples: the exact
+// inscribed cover for any viewport aspect.
+export function computeViewFit(wCss, hCss, center, points, boundarySamples) {
+  const bPts = boundarySamples || sampleWindowBoundary(center);
+  let cx = lonToWorldX(center.lon);
+  let cy = latToWorldY(center.lat);
+  let frame = null;
+  let frame0 = null;
+  if (points && points.length) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    for (const p of points) {
+      const wx = lonToWorldX(p.lon);
+      const wy = latToWorldY(p.lat);
+      if (wx < x0) x0 = wx;
+      if (wy < y0) y0 = wy;
+      if (wx > x1) x1 = wx;
+      if (wy > y1) y1 = wy;
+    }
+    cx = (x0 + x1) / 2;
+    cy = (y0 + y1) / 2;
+    const bw = Math.max(x1 - x0, 1e-9);
+    const bh = Math.max(y1 - y0, 1e-9);
+    frame = Math.min(
+      (wCss * (1 - 2 * FRAME_MARGIN)) / bw,
+      (hCss * (1 - 2 * FRAME_MARGIN)) / bh
+    );
+    frame0 = Math.min(wCss / bw, hCss / bh);
+  }
+  let cover = 0;
+  for (const [wx, wy] of bPts) {
+    const need = Math.min(
+      wCss / (2 * Math.abs(wx - cx)),
+      hCss / (2 * Math.abs(wy - cy))
+    );
+    if (need > cover) cover = need;
+  }
+  const scale =
+    frame == null
+      ? cover * WINDOW_INSET
+      : Math.min(Math.max(frame, cover * FRAME_INSET), frame0);
+  return { cx, cy, scale, frame, frame0, cover };
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext("2d");
 
@@ -154,20 +250,7 @@ export function createRenderer(canvas) {
   let heatBox = null; // {wx0, wy0, wx1, wy1}
 
   function buildBoundary() {
-    const SAMPLES = 48; // per edge
-    const pts = [];
-    const edge = (x0, y0, x1, y1) => {
-      for (let i = 0; i < SAMPLES; i++) {
-        const t = i / SAMPLES;
-        const ll = unprojectAt(windowCenter, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
-        pts.push([lonToWorldX(ll.lon), latToWorldY(ll.lat)]);
-      }
-    };
-    const E = HALF_EXTENT;
-    edge(-E, E, E, E); // north edge, west->east
-    edge(E, E, E, -E); // east edge
-    edge(E, -E, -E, -E); // south edge
-    edge(-E, -E, -E, E); // west edge
+    const pts = sampleWindowBoundary(windowCenter);
     boundaryPts = pts;
     let wx0 = Infinity;
     let wy0 = Infinity;
@@ -797,35 +880,41 @@ export function createRenderer(canvas) {
   }
 
   // ---- view framing --------------------------------------------------------
-  // Cover-fit the evaluation window with an inset (item 41): the visible
-  // viewport sits strictly INSIDE the region under evaluation, centered on
-  // the window center, so the window boundary and the heat's hard edge are
-  // just off-screen by default and only appear on a deliberate zoom-out.
-  // The fit is computed against the sampled boundary polygon, not its
-  // Mercator bbox: the square's edges bow inward in Mercator near the
-  // corners, so a bbox cover-fit would leave the corners poking into the
-  // viewport. For each boundary point the minimal scale that pushes it
-  // off-screen is min(w/2|dx|, h/2|dy|) (either axis suffices); the max
-  // over all points is the exact inscribed cover for either viewport
-  // aspect, and the 1.15 inset keeps the nearest boundary ~7.5% of the
-  // viewport span beyond the edge. Used by the initial view, preset loads,
-  // "evaluate here", and the reset-view control.
-  function frameWindow() {
+  // Default view (item 42, superseding item 41's rule): with `points` (the
+  // preset's staged anchors plus the declared marker), frame them all with a
+  // comfortable margin, clamped -- via computeViewFit -- so the visible
+  // viewport still sits strictly inside the evaluation window and the
+  // window boundary / heat edge stay off-screen. Without points ("evaluate
+  // here", free recentering), the item-41 inset cover fit on the window
+  // center. Points outside the window can never be framed within it, so
+  // they are dropped; if none survive, fall back to the cover fit. Used by
+  // the initial view, preset loads, "evaluate here", and reset-view.
+  //
+  // `obstructRight` (css px) is the width of opaque UI overlaying the
+  // canvas's right edge (the parameters column): the fit runs on the
+  // unobstructed region -- a point "on-canvas" under the card is not
+  // visible, and a boundary segment under the card cannot be seen either --
+  // and the framed staging is centered in that region, not the full canvas.
+  // Capped so a very narrow canvas never collapses the frame region.
+  function frameWindow(points, obstructRight = 0) {
     resize();
     if (!boundaryPts || !(wCss > 0)) return;
-    const cx = lonToWorldX(windowCenter.lon);
-    const cy = latToWorldY(windowCenter.lat);
-    let fit = 0;
-    for (const [wx, wy] of boundaryPts) {
-      const need = Math.min(
-        wCss / (2 * Math.abs(wx - cx)),
-        hCss / (2 * Math.abs(wy - cy))
-      );
-      if (need > fit) fit = need;
+    let framed = null;
+    if (points && points.length) {
+      framed = points.filter((p) => {
+        const q = projectAt(windowCenter, p.lat, p.lon);
+        return Math.abs(q.x) <= HALF_EXTENT && Math.abs(q.y) <= HALF_EXTENT;
+      });
+      if (!framed.length) framed = null;
     }
-    fit *= 1.15;
-    zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit)));
-    viewCenter = { wx: cx, wy: cy };
+    const effW = framed
+      ? Math.max(wCss - Math.max(0, obstructRight), wCss * 0.55)
+      : wCss;
+    const fit = computeViewFit(effW, hCss, windowCenter, framed, boundaryPts);
+    zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit.scale)));
+    const s = Math.pow(2, zoom);
+    // place the fit center at the middle of the unobstructed region
+    viewCenter = { wx: fit.cx + (wCss - effW) / (2 * s), wy: fit.cy };
     clampView();
   }
 

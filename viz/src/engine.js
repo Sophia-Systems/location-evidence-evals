@@ -6,7 +6,7 @@
 // every distance that feeds physics is great-circle via haversineKm.
 //
 // Structure:
-//   - grid          square N x N (default 160) or hex lattice of equal cell area
+//   - grid          square N x N (default 180) or hex lattice of equal cell area
 //   - anchors       {id, name, lat, lon, pi} + per-anchor Float32Array distance field
 //   - simulator     the world's truth: true location, true delta_att, attack mode.
 //                   probe() draws signed receipts. Never consulted by the evaluator.
@@ -62,6 +62,14 @@ const ST_PETERSBURG = { lat: 59.934, lon: 30.335 };
 // result 1. That haze is the TRUST preset's lesson, so preset 3 keeps
 // neutral 0.10 starting points; preset 5 keeps its own staging.
 const HIGH_TRUST_PI = 0.02;
+// The four Cambridge presets pin the evaluation window on CENTER (54N 13E,
+// the v1 domain center) instead of inheriting their declared location
+// (DECISIONS.md item 42): their anchors reach 1,760 km northeast of
+// Cambridge (Helsinki), so a Cambridge-centered window leaves only ~330 km
+// of window beyond the farthest anchor -- too little for the default view
+// to frame every anchor while keeping the window boundary off-screen.
+// CENTER sits at the staging's midpoint, restoring the symmetry (and the
+// exact v1 window, which was chosen so this whole staging fits).
 export const PRESETS = [
   {
     id: "baseline",
@@ -69,6 +77,7 @@ export const PRESETS = [
     caption:
       "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
+    windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
@@ -85,6 +94,7 @@ export const PRESETS = [
     caption:
       "Drag anchors: a different bearing collapses the lens; a co-located anchor adds almost nothing. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
+    windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
@@ -101,6 +111,7 @@ export const PRESETS = [
     caption:
       "Lower an anchor's trust and the same receipts move the map less; no amount of probing beats the log2(1/pi) ceiling.",
     declared: CAMBRIDGE,
+    windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
@@ -117,6 +128,7 @@ export const PRESETS = [
     caption:
       "Raise the allowance past the attester's true delta_att: circles shrink below physics and the true location falls outside one. (Anchors here are highly trusted; trust is preset 3's lesson.)",
     declared: CAMBRIDGE,
+    windowCenter: CENTER,
     trueLocation: CAMBRIDGE,
     attack: "none",
     allowance: 0,
@@ -182,13 +194,13 @@ const clampPi = (p) => Math.min(1 - 1e-9, Math.max(1e-9, p));
 // ---------------------------------------------------------------------------
 
 export function createEngine(options = {}) {
-  const { seed = 1, gridN = 160, gridShape = "square" } = options;
+  const { seed = 1, gridN = 180, gridShape = "square" } = options;
 
   let rng = mulberry32(seed);
 
   // ---- grid & evaluation window -------------------------------------------
 
-  // The hypothesis space is a finite ~2,600 km square window (the grid),
+  // The hypothesis space is a finite ~3,600 km square window (the grid),
   // centered on a movable window center -- the "region under evaluation".
   // Default stays CENTER (54N 13E), the v1 domain. Moving the window keeps
   // every receipt (evidence is evidence; the hypothesis space moved) and

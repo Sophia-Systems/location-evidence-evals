@@ -179,7 +179,7 @@ export function buildApp(root) {
             <span class="seg" id="grid-seg"><button data-v="square">square</button><button data-v="hex">hex</button></span>
             <span class="val" id="grid-val"></span></div>
           <div class="row"><span class="lbl">resolution</span>
-            <input type="range" id="grid-res" min="80" max="220" step="20" value="160">
+            <input type="range" id="grid-res" min="80" max="220" step="20" value="180">
             <span class="val" id="grid-res-val"></span></div>
           <div class="row" style="align-items:flex-start"><span class="lbl" style="padding-top:4px">color ramp</span>
             <span class="ramp-row" id="ramp-row" style="flex:1"></span></div>
@@ -193,7 +193,7 @@ export function buildApp(root) {
           <details class="fold" id="about-fold">
             <summary>about this model</summary>
             <div class="fold-body">
-              <p><b>A windowed posterior on a round Earth.</b> The map is global, but the model's hypothesis space is the ~2,600 × 2,600 km "region under evaluation" -- the dashed window holding the posterior grid. Anchors can sit anywhere on Earth and every distance is great-circle; "evaluate here" moves the window (keeping all receipts) rather than growing it, because a whole-Earth grid at useful resolution would be millions of cells for no extra insight: the claim under test is always local.</p>
+              <p><b>A windowed posterior on a round Earth.</b> The map is global, but the model's hypothesis space is the ~3,600 × 3,600 km "region under evaluation" -- the dashed window holding the posterior grid. Anchors can sit anywhere on Earth and every distance is great-circle; "evaluate here" moves the window (keeping all receipts) rather than growing it, because a whole-Earth grid at useful resolution would be millions of cells for no extra insight: the claim under test is always local.</p>
               <p><b>Two standing dependencies.</b> Everything here locates <i>the machine answering with the attester's signing key</i>. Binding that key to particular hardware is a separate, unsolved problem. And receipts are only as good as their signatures: an adversary who can forge the scheme voids every bound on this page.</p>
               <p><b>Why the floor is not zero.</b> Beyond a lightspeed radius the likelihood drops off a cliff but lands on a small residual (10⁻⁶ of peak) rather than zero: a cloned key, a broken signature scheme, a dishonest anchor, or an equipment fault could each produce a physically impossible-looking receipt. The evaluation keeps that residual explicit instead of rounding it away.</p>
               <p><b>Geography is context, not claim.</b> Country boundaries are drawn to orient you; nothing in the computation reads them. Geofences and P(inside region) belong to the policy stage, deliberately not built here.</p>
@@ -1111,8 +1111,26 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
 
   // ---- view controls: reset pan/zoom (item 2) -------------------------------
 
+  // Default-view framing (item 42): while a preset's staging is the frame of
+  // reference, the default view frames all its anchors plus the declared
+  // marker (current positions -- drags count); after "evaluate here" there
+  // is no natural anchor frame, so the window cover fit applies instead.
+  let frameMode = "anchors"; // "anchors" | "window"
+  const framePoints = () =>
+    frameMode === "anchors"
+      ? [engine.getSimulator().declared, ...engine.getAnchors()]
+      : null;
+  // The parameters column floats over the canvas's right edge; a staged
+  // anchor "on-canvas" underneath it is not visible, so framing targets the
+  // unobstructed region (item 42).
+  const frameObstruction = () => {
+    const cardRect = $("#params-card").getBoundingClientRect();
+    const mapRect = canvas.getBoundingClientRect();
+    return Math.max(0, mapRect.right - cardRect.left);
+  };
+
   $("#reset-view-btn").addEventListener("click", () => {
-    renderer.resetView();
+    renderer.frameWindow(framePoints(), frameObstruction());
     drawScene();
   });
 
@@ -1125,7 +1143,8 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     const c = renderer.getViewCenterLatLon();
     engine.setWindowCenter(c.lat, c.lon);
     renderer.setWindow(engine.getWindowCenter());
-    renderer.frameWindow(); // same inset cover-fit as preset loads (item 41)
+    frameMode = "window"; // no natural anchor frame here (item 42)
+    renderer.frameWindow(); // item-41 inset cover fit on the new region
     for (const id of state.minDist.keys()) computeMinDist(id);
     displayT = null; // new region: snap, never tween across hypothesis spaces
     refresh({ animate: false });
@@ -1151,11 +1170,13 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     for (const a of engine.getAnchors()) computeMinDist(a.id);
     setPlacing(false);
 
-    // the evaluation window recentered on the preset's declared location:
-    // sync the renderer's window (boundary + heat raster) and re-frame the
-    // view on the new region under evaluation
+    // the evaluation window recentered on the preset's staging (its pinned
+    // windowCenter, or its declared location): sync the renderer's window
+    // (boundary + heat raster) and frame all staged anchors plus the
+    // declared marker, clamped inside the window (item 42)
     renderer.setWindow(engine.getWindowCenter());
-    renderer.frameWindow();
+    frameMode = "anchors";
+    renderer.frameWindow(framePoints(), frameObstruction());
 
     // interval back to the preset default (PROMPT.md's example window)
     $("#int-start").value = "12:00";

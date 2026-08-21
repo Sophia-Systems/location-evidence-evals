@@ -5,7 +5,7 @@
 // Window plane (the model's hypothesis space): azimuthal equidistant
 // projection centered on a movable WINDOW CENTER (default CENTER, 54N 13E).
 //   x = km east of center, y = km north of center.
-//   Domain: x, y in [-HALF_EXTENT, +HALF_EXTENT] (~2,600 x 2,600 km).
+//   Domain: x, y in [-HALF_EXTENT, +HALF_EXTENT] (~3,600 x 3,600 km).
 // The window is where the posterior grid lives -- the "region under
 // evaluation" -- decoupled from the display, which since v2 is a global
 // Web Mercator map. projectAt/unprojectAt take the window center explicitly;
@@ -18,7 +18,11 @@
 
 export const R_EARTH = 6371; // km, mean Earth radius
 export const CENTER = { lat: 54, lon: 13 };
-export const HALF_EXTENT = 1300; // km (window sized so AWS Dublin and St Petersburg both fit)
+// Window sized comfortably larger than any preset's anchor spread (Cambridge
+// to Helsinki is ~1,760 km), so the default view can frame every staged
+// anchor while still sitting strictly inside the window -- see DECISIONS.md
+// item 42. AWS Dublin and St Petersburg both fit with room to spare.
+export const HALF_EXTENT = 1800; // km
 
 const RAD = Math.PI / 180;
 const DEG = 180 / Math.PI;

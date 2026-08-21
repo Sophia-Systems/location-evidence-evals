@@ -38,17 +38,18 @@ section("grid construction");
 {
   const eng = createEngine({ seed: 7 });
   const g = eng.getGrid();
-  check("square grid is 160x160 by default", g.cellCount === 160 * 160, `got ${g.cellCount}`);
+  check("square grid is 180x180 by default", g.cellCount === 180 * 180, `got ${g.cellCount}`);
+  check("default cell pitch is 20 km (3,600 km window / 180)", Math.abs(g.stepKm - 20) < 1e-9, `got ${g.stepKm}`);
   check(
     "cell centers span the domain",
-    Math.abs(g.xs[0] + 1300 - g.stepKm / 2) < 1e-3 && Math.abs(g.ys[g.cellCount - 1] - 1300 + g.stepKm / 2) < 1e-3
+    Math.abs(g.xs[0] + 1800 - g.stepKm / 2) < 1e-3 && Math.abs(g.ys[g.cellCount - 1] - 1800 + g.stepKm / 2) < 1e-3
   );
   const squareArea = g.cellAreaKm2;
 
   // rebuild timing (with 8 anchors' distance fields recomputed)
   for (const f of FACILITIES.slice(0, 8)) eng.addAnchor({ facility: f.id });
   let t0 = performance.now();
-  eng.rebuildGrid({ shape: "hex", n: 160 });
+  eng.rebuildGrid({ shape: "hex", n: 180 });
   const hexMs = performance.now() - t0;
   const gh = eng.getGrid();
   check("hex rebuild under 100 ms (incl. 8 distance fields)", hexMs < 100, `${fmt(hexMs, 1)} ms`);
@@ -59,7 +60,7 @@ section("grid construction");
   );
   check(
     "hex cell count within 3% of square count",
-    Math.abs(gh.cellCount - 25600) / 25600 < 0.03,
+    Math.abs(gh.cellCount - 32400) / 32400 < 0.03,
     `got ${gh.cellCount}`
   );
   check(
@@ -67,7 +68,7 @@ section("grid construction");
     gh.lats.length === gh.cellCount && Number.isFinite(gh.lats[0]) && Number.isFinite(gh.lons[0])
   );
   t0 = performance.now();
-  eng.rebuildGrid({ shape: "square", n: 160 });
+  eng.rebuildGrid({ shape: "square", n: 180 });
   const sqMs = performance.now() - t0;
   check("square rebuild under 100 ms (incl. 8 distance fields)", sqMs < 100, `${fmt(sqMs, 1)} ms`);
 
@@ -608,7 +609,7 @@ let reportedRecomputeMs = null;
   const median = runs[3];
   reportedRecomputeMs = median;
   console.log(`        rtt-min full recompute (median of 7): ${fmt(median, 1)} ms  [${runs.map((x) => fmt(x, 1)).join(", ")}]`);
-  check("full recompute (N=160, 8 anchors, 400 receipts, rtt-min) under 50 ms", median < 50, `${fmt(median, 1)} ms`);
+  check("full recompute (N=180, 8 anchors, 400 receipts, rtt-min) under 50 ms", median < 50, `${fmt(median, 1)} ms`);
 
   eng.setEvaluatorParams({ bundleMode: "product" });
   const pruns = [];
@@ -737,12 +738,16 @@ section("evaluation window: recentering keeps receipts, recomputes fields");
     eng.getWindowCenter().lat === 54 && eng.getWindowCenter().lon === 13
   );
 
-  // Presets recenter the window on their declared location.
+  // Presets recenter the window on their staging: a pinned windowCenter
+  // when the preset carries one, else the declared location. The Cambridge
+  // presets pin CENTER (54N 13E) -- their anchors reach 1,760 km northeast
+  // of Cambridge, so a declared-centered window could not both frame every
+  // anchor and keep its boundary off-screen (item 42).
   eng.loadPreset("baseline");
   const wcB = eng.getWindowCenter();
   check(
-    "loadPreset(baseline) centers the window on declared (Cambridge)",
-    Math.abs(wcB.lat - 52.205) < 1e-6 && Math.abs(wcB.lon - 0.119) < 1e-6,
+    "loadPreset(baseline) centers the window on its pinned CENTER (54N 13E)",
+    Math.abs(wcB.lat - 54) < 1e-6 && Math.abs(wcB.lon - 13) < 1e-6,
     `got ${wcB.lat}, ${wcB.lon}`
   );
   eng.loadPreset("evasive");
@@ -794,7 +799,8 @@ section("evaluation window: recentering keeps receipts, recomputes fields");
 
   // Move back: same window layout, receipts still in force, posterior
   // reproduces the pre-move belief exactly (nothing was lost in transit).
-  eng.setWindowCenter(52.205, 0.119);
+  // (baseline's window sits at its pinned CENTER, 54N 13E.)
+  eng.setWindowCenter(54, 13);
   const postBack = eng.computePosterior();
   let maxDiff = 0;
   for (let i = 0; i < post0.length; i++) maxDiff = Math.max(maxDiff, Math.abs(post0[i] - postBack[i]));
@@ -844,6 +850,69 @@ section("far-away anchor: giant circle, window interior, capped tilt (result 2 a
     massPeak < 0.15,
     `mass=${fmt(massPeak, 4)} (uniform would be ~0.04)`
   );
+}
+
+// ---------------------------------------------------------------------------
+section("default-view framing (item 42): staging framed, boundary off-screen");
+// ---------------------------------------------------------------------------
+{
+  // Pure Mercator fit math from render.js (module-level, DOM-free). For each
+  // preset at the reference viewport, the chosen scale must keep every
+  // staged anchor plus the declared marker strictly on-screen with real
+  // margin, and every sampled window-boundary point strictly off-screen.
+  const { computeViewFit, sampleWindowBoundary, FRAME_INSET } = await import(
+    "../src/render.js"
+  );
+  const { lonToWorldX, latToWorldY } = await import("../src/geo.js");
+  // 1600x1000 is the reference canvas; 1220x1000 is its unobstructed region
+  // once the ~380 px parameters column is reserved (frameWindow's
+  // obstructRight) -- the rect the app actually frames presets into.
+  const fac = new Map(FACILITIES.map((f) => [f.id, f]));
+  for (const [W, H] of [[1600, 1000], [1220, 1000]]) {
+  for (const p of PRESETS) {
+    const wc = p.windowCenter ?? p.declared;
+    const pts = [p.declared, ...p.anchors.map((a) => fac.get(a.facility))];
+    const boundary = sampleWindowBoundary(wc);
+    const fit = computeViewFit(W, H, wc, pts, boundary);
+    const s = fit.scale;
+    // margin of the tightest framed point, as a fraction of the viewport span
+    let minMargin = Infinity;
+    for (const q of pts) {
+      const dx = Math.abs(lonToWorldX(q.lon) - fit.cx) * s;
+      const dy = Math.abs(latToWorldY(q.lat) - fit.cy) * s;
+      minMargin = Math.min(minMargin, (W / 2 - dx) / W, (H / 2 - dy) / H);
+    }
+    check(
+      `preset ${p.id}: staging framed with >=10% margin at ${W}x${H}`,
+      minMargin >= 0.1,
+      `min margin ${fmt(minMargin, 3)}`
+    );
+    let boundaryVisible = false;
+    for (const [wx, wy] of boundary) {
+      if (Math.abs(wx - fit.cx) * s < W / 2 && Math.abs(wy - fit.cy) * s < H / 2)
+        boundaryVisible = true;
+    }
+    check(`preset ${p.id}: window boundary entirely off-screen at ${W}x${H}`, !boundaryVisible);
+    check(
+      `preset ${p.id}: cover clamp leaves the staging frameable (cover <= zero-margin frame) at ${W}x${H}`,
+      fit.cover * FRAME_INSET <= fit.frame0,
+      `cover*inset=${fmt(fit.cover * FRAME_INSET, 1)} frame0=${fmt(fit.frame0, 1)}`
+    );
+  }
+  }
+  // The evasive staging is geographically tight: the anchor frame itself
+  // must be the binding fit (zoomed to the staging, not to the window).
+  {
+    const p = PRESETS.find((x) => x.id === "evasive");
+    const wc = p.windowCenter ?? p.declared;
+    const pts = [p.declared, ...p.anchors.map((a) => fac.get(a.facility))];
+    const fit = computeViewFit(1600, 1000, wc, pts);
+    check(
+      "preset evasive: frame-anchors is the binding fit",
+      fit.frame >= fit.cover * FRAME_INSET,
+      `frame=${fmt(fit.frame, 1)} cover*inset=${fmt(fit.cover * FRAME_INSET, 1)}`
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
