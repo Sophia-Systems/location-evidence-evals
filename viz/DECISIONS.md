@@ -459,3 +459,29 @@ following those.
     fit math is a pure exported function (computeViewFit) so the node
     suite verifies all five presets at 1600x1000: staging framed with
     >=10% margin, boundary entirely off-screen.
+
+## v3: simplification pass (adjudicated by John)
+
+43. **Two scenarios, less chrome, evidence made visible.** John reviewed the
+    five-preset build and directed a simplification: the demo teaches best
+    with just **Baseline** (erasure: belief concentrates by exclusion) and
+    **Evasive attester** (padding cannot fake presence; reveal-truth defaults
+    on and the true location joins the default frame). Removed from the UI --
+    engine capabilities and tests retained -- were the geometry / trust /
+    allowance presets, the anchor fabrication toggle, the assessment-interval
+    panel (the interval is now always all receipts), the bundle-mode switch
+    (rtt-min only), and the "evaluate here" control. The per-anchor `pi` is
+    surfaced as **collusion risk** (the chance the anchor colludes with the
+    attester), which resolves the apparent inversion of the identity presets:
+    an ally of the attester's operator carries HIGH risk (0.30), an adversary
+    the LOWEST (0.03) -- the most credible witness -- now stated in a hint
+    under the preset chips. Added: an orienting blurb (the map is the
+    probability distribution over the machine's location, updated as receipts
+    arrive; links johnx.co/research -- a nav-only href whitelisted in
+    build.mjs), a five-step "how to use" list, an evidence log under the
+    scenario card (one row per signed receipt, expanding to a simplified
+    plugin-rtt-anchor-style record with pseudo keys/signatures), the
+    assumptions line relocated into the scenario card, every info tip cut to
+    one or two sentences, overlay opacity defaulting to 100%, and the
+    declared star replaced by an ink-ringed translucent circle the truth
+    graticule overlays cleanly when declared = true.
