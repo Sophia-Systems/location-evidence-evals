@@ -33,7 +33,7 @@ const PAGES = [
   },
   {
     out: "story.html",
-    title: "Where is that machine? — location evidence, step by step",
+    title: "Location evidence — evidence evaluation, step by step",
     css: "story.css",
     modules: ["geo.js", "map-data.js", "ramps.js", "engine.js", "render.js", "story.js"],
   },

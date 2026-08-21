@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Where is that machine? — location evidence, step by step</title>
+<title>Location evidence — evidence evaluation, step by step</title>
 <style>
 /* story.css -- the mobile scroll story.
    Same "verifier's bench" voice as style.css: warm paper in light,
@@ -3927,13 +3927,14 @@ const STEPS = [
       },
     ],
     card: `
-      <div class="story-kicker">location evidence, in five steps</div>
-      <h1>A machine says: I&rsquo;m&nbsp;in&nbsp;Cambridge.</h1>
-      <p>Can anyone check, without taking its operator&rsquo;s word for it?
-      The ringed marker is the claim. The colored wash is belief about where
-      the machine <strong>really</strong> is &mdash; so far, anywhere. The
-      green dots are <strong>anchors</strong>: machines at known locations,
-      ready to test the claim.</p>
+      <div class="story-kicker">location verification &middot; evidence evaluation</div>
+      <h1>A machine declares its location: Cambridge.</h1>
+      <p>The goal is to check that claim from network measurements alone,
+      without trusting the operator&rsquo;s word. The ringed marker is the
+      declared location. The colored overlay is the probability distribution
+      over where the machine actually is &mdash; uniform until there is
+      evidence. The green dots are <strong>anchors</strong>: machines at
+      known locations that take the measurements.</p>
       <svg class="scroll-cue" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round"/>
@@ -3941,17 +3942,19 @@ const STEPS = [
   },
   {
     id: "receipt",
-    eyebrow: "one receipt",
+    eyebrow: "one measurement",
     frame: BASE_STAGE,
     reveal: false,
     stages: [{ delay: 250, fn: (e) => e.probe("hetzner-helsinki", 0) }],
     card: `
-      <h2>Evidence that erases</h2>
-      <p>The Helsinki anchor sends a probe; the machine answers; the round
-      trip is timed and <strong>signed</strong>. Light has a speed limit, so
-      one receipt proves the machine sits somewhere inside a circle &mdash;
-      and erases everything outside it.</p>
-      <p>A receipt never points at a location. It <strong>excludes</strong>.</p>`,
+      <h2>One signed measurement</h2>
+      <p>The Helsinki anchor sends a probe and times the round trip; the
+      reply is signed, making the timing a <strong>receipt</strong>. Signal
+      propagation speed is bounded, so one round-trip time bounds the
+      machine&rsquo;s distance from the anchor.</p>
+      <p>Locations beyond that radius are excluded. Locations inside it stay
+      roughly equally plausible &mdash; the receipt narrows the distribution
+      without picking a point.</p>`,
   },
   {
     id: "geometry",
@@ -3964,12 +3967,13 @@ const STEPS = [
       { delay: 1550, fn: (e) => e.probe("equinix-london", 3) },
     ],
     card: `
-      <h2>Circles that agree in one place</h2>
-      <p>Anchors at different bearings each erase their own outside. The
-      circles overlap in only one region, and belief collapses onto
+      <h2>Measurements from several directions</h2>
+      <p>Anchors in Falkenstein, Paris, and London probe the same machine.
+      Each receipt excludes the region beyond its own radius, and the
+      intersection that remains is small: the distribution concentrates near
       Cambridge.</p>
-      <p>No anchor ever saw the machine. <strong>Exclusion alone found
-      it.</strong></p>`,
+      <p>The concentration comes entirely from exclusion &mdash; no anchor
+      measured the location directly.</p>`,
   },
   {
     id: "trust",
@@ -3985,17 +3989,18 @@ const STEPS = [
       },
     ],
     card: `
-      <h2>Evidence is only as good as its witnesses</h2>
-      <p>Suppose each anchor might be colluding with the machine&rsquo;s
-      operator. The receipts haven&rsquo;t changed &mdash; but each one now
-      proves less, because &ldquo;the anchor made it up&rdquo; partly explains
-      it away. The map goes hazy.</p>
-      <p>Strong assessments need <strong>independent, diverse anchors</strong>,
-      not just more receipts.</p>`,
+      <h2>Evidence is weighted by anchor trust</h2>
+      <p>Each anchor carries a compromise probability: the chance it would
+      sign fabricated receipts. Here it is raised from 2% to 30% for every
+      anchor. The receipts are unchanged, but each proves less &mdash;
+      fabrication now partly explains it &mdash; and the distribution
+      spreads.</p>
+      <p>The strength of an assessment depends on how independent the anchors
+      are, not only on how many receipts they sign.</p>`,
   },
   {
     id: "lie",
-    eyebrow: "the lie",
+    eyebrow: "a false claim",
     frame: EVASIVE_STAGE,
     reveal: false,
     stages: [
@@ -4011,11 +4016,13 @@ const STEPS = [
       { delay: 2300, fn: (e) => e.probeAll(2) },
     ],
     card: `
-      <h2>Now a machine lies</h2>
-      <p>This one declares <strong>Tallinn</strong> &mdash; but it isn&rsquo;t
-      there. It delays each answer by just enough to mimic the distances
-      Tallinn would show.</p>
-      <p>Watch where belief settles. Not on the claim.</p>`,
+      <h2>A false declaration</h2>
+      <p>This machine declares <strong>Tallinn</strong> but is somewhere
+      else. It delays each reply by the amount that would make its round-trip
+      times consistent with Tallinn.</p>
+      <p>Added delay can only lengthen a measurement, never shorten it, so
+      the receipts cannot all be made consistent with the declared location.
+      The distribution does not concentrate on Tallinn.</p>`,
   },
   {
     id: "detection",
@@ -4024,16 +4031,16 @@ const STEPS = [
     reveal: true,
     stages: [],
     card: `
-      <h2>The lie doesn&rsquo;t survive the physics</h2>
-      <p>The machine was in <strong>St Petersburg</strong>. Padding can only
-      ever <em>add</em> time &mdash; it makes a machine look farther from an
-      anchor, never closer &mdash; so no padding schedule could satisfy every
-      anchor at once. Belief settled on the truth: <strong>the false claim is
-      detectable</strong>.</p>
-      <p class="aside">This holds as long as the anchors are independent and
-      the verifier doesn&rsquo;t write off too much of the measured time as
-      &ldquo;processing.&rdquo; The full demo lets you break both and watch
-      the assessment fail.</p>
+      <h2>The declaration is falsified</h2>
+      <p>The machine is in <strong>St Petersburg</strong>. Padding moves an
+      apparent position farther from an anchor, never closer, so no padding
+      schedule satisfies every anchor at once. The distribution concentrated
+      near the actual location rather than the declared one: the false claim
+      is detectable from the receipts alone.</p>
+      <p class="aside">This holds when the anchors are independent and the
+      verifier&rsquo;s allowance for the machine&rsquo;s processing time is
+      set conservatively. The full demo lets you vary both and watch the
+      assessment degrade.</p>
       <div class="story-links">
         <a class="primary" href="./index.html?full">Explore the full demo (desktop)</a>
         <a class="secondary" href="https://johnx.co/research">About this research</a>
