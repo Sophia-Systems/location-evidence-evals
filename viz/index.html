@@ -209,6 +209,11 @@ details.fold .fold-body a:hover {
   margin-top: 10px;
 }
 
+/* the instructions fold sits inside the scenario card already -- no tint */
+details.fold.tutorial {
+  background: transparent;
+}
+
 .tutorial ol {
   margin: 2px 0 2px;
   padding-left: 18px;
@@ -236,7 +241,10 @@ details.fold .fold-body a:hover {
 /* attester block: the machine under test, staged by the scenario */
 
 .att-block {
-  margin-top: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: var(--surface);
 }
 
 .att-sub {
@@ -245,7 +253,31 @@ details.fold .fold-body a:hover {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-faint);
-  margin-bottom: 3px;
+  margin: 9px 0 5px;
+}
+
+/* header mirrors .anchor-card header; the glyph echoes the map's declared
+   marker: solid accent dot, ink ring */
+.att-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.att-glyph {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--ink);
+}
+
+.att-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12.5px;
 }
 
 .att-row {
@@ -4933,8 +4965,9 @@ function buildApp(root) {
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
         </div>
+        <div class="att-sub">Attester</div>
         <div class="att-block">
-          <div class="att-sub">Attester</div>
+          <header class="att-head"><span class="att-glyph"></span><span class="att-name" id="att-name"></span></header>
           <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
           <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
           <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
@@ -5752,6 +5785,8 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
 
   function updateAttesterCard(preset) {
     const sim = engine.getSimulator();
+    const city = (preset.declaredName ?? "").split(",")[0].trim();
+    $("#att-name").textContent = city ? `${city} Operator` : "Operator";
     $("#att-declared").textContent =
       `${preset.declaredName ?? "—"} · ${fmtLatLon(sim.declared)}`;
     $("#att-behavior").textContent =

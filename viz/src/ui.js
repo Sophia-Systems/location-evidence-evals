@@ -116,8 +116,9 @@ export function buildApp(root) {
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
         </div>
+        <div class="att-sub">Attester</div>
         <div class="att-block">
-          <div class="att-sub">Attester</div>
+          <header class="att-head"><span class="att-glyph"></span><span class="att-name" id="att-name"></span></header>
           <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
           <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
           <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
@@ -1027,6 +1028,8 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
 
   function updateAttesterCard(preset) {
     const sim = engine.getSimulator();
+    const city = (preset.declaredName ?? "").split(",")[0].trim();
+    $("#att-name").textContent = city ? `${city} Operator` : "Operator";
     $("#att-declared").textContent =
       `${preset.declaredName ?? "—"} · ${fmtLatLon(sim.declared)}`;
     $("#att-behavior").textContent =

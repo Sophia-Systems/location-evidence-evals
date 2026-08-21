@@ -202,6 +202,11 @@ details.fold .fold-body a:hover {
   margin-top: 10px;
 }
 
+/* the instructions fold sits inside the scenario card already -- no tint */
+details.fold.tutorial {
+  background: transparent;
+}
+
 .tutorial ol {
   margin: 2px 0 2px;
   padding-left: 18px;
@@ -229,7 +234,10 @@ details.fold .fold-body a:hover {
 /* attester block: the machine under test, staged by the scenario */
 
 .att-block {
-  margin-top: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: var(--surface);
 }
 
 .att-sub {
@@ -238,7 +246,31 @@ details.fold .fold-body a:hover {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-faint);
-  margin-bottom: 3px;
+  margin: 9px 0 5px;
+}
+
+/* header mirrors .anchor-card header; the glyph echoes the map's declared
+   marker: solid accent dot, ink ring */
+.att-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.att-glyph {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 1.5px solid var(--ink);
+}
+
+.att-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12.5px;
 }
 
 .att-row {
