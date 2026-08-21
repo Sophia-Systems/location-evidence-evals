@@ -797,20 +797,35 @@ export function createRenderer(canvas) {
   }
 
   // ---- view framing --------------------------------------------------------
-  // Contain-fit the evaluation window with a small margin: the whole region
-  // under evaluation in view, tiles as global context around it. Used by the
-  // initial view, preset loads, and the reset-view control.
+  // Cover-fit the evaluation window with an inset (item 41): the visible
+  // viewport sits strictly INSIDE the region under evaluation, centered on
+  // the window center, so the window boundary and the heat's hard edge are
+  // just off-screen by default and only appear on a deliberate zoom-out.
+  // The fit is computed against the sampled boundary polygon, not its
+  // Mercator bbox: the square's edges bow inward in Mercator near the
+  // corners, so a bbox cover-fit would leave the corners poking into the
+  // viewport. For each boundary point the minimal scale that pushes it
+  // off-screen is min(w/2|dx|, h/2|dy|) (either axis suffices); the max
+  // over all points is the exact inscribed cover for either viewport
+  // aspect, and the 1.15 inset keeps the nearest boundary ~7.5% of the
+  // viewport span beyond the edge. Used by the initial view, preset loads,
+  // "evaluate here", and the reset-view control.
   function frameWindow() {
     resize();
-    if (!heatBox || !(wCss > 0)) return;
-    const bw = heatBox.wx1 - heatBox.wx0;
-    const bh = heatBox.wy1 - heatBox.wy0;
-    const fit = Math.min(wCss / bw, hCss / bh) * 0.9;
+    if (!boundaryPts || !(wCss > 0)) return;
+    const cx = lonToWorldX(windowCenter.lon);
+    const cy = latToWorldY(windowCenter.lat);
+    let fit = 0;
+    for (const [wx, wy] of boundaryPts) {
+      const need = Math.min(
+        wCss / (2 * Math.abs(wx - cx)),
+        hCss / (2 * Math.abs(wy - cy))
+      );
+      if (need > fit) fit = need;
+    }
+    fit *= 1.15;
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit)));
-    viewCenter = {
-      wx: (heatBox.wx0 + heatBox.wx1) / 2,
-      wy: (heatBox.wy0 + heatBox.wy1) / 2,
-    };
+    viewCenter = { wx: cx, wy: cy };
     clampView();
   }
 

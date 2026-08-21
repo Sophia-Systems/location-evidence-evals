@@ -390,3 +390,27 @@ following those.
     with latitude, so the bar re-derives from the view-center latitude
     and states it ("500 km at 53°N") -- exact at center, approximate
     toward the top and bottom of the viewport.
+41. **Default view is inset cover-fit ON the evaluation window.**
+    *(Adjudicated by John.)* Amends the view-fit semantics of items 32/36:
+    after the v2 move to a global map, the contain-fit default put the
+    whole window inside the viewport, so the posterior heat -- which
+    exists only within the window -- visibly cut off at the window
+    boundary mid-screen and looked broken to a first-time viewer. The
+    default view (initial load, preset load/recenter, "evaluate here",
+    and reset-view) is now inset cover-fit, centered on the window center
+    (the preset's declared location). The fit is computed against the
+    sampled boundary polygon, not its Mercator bbox -- the square's edges
+    bow inward in Mercator near the corners, so a bbox cover-fit left the
+    corners poking into the viewport (browser-caught). Per boundary point
+    the minimal scale pushing it off-screen is min(w/2|dx|, h/2|dy|); the
+    max over all points is the exact inscribed cover for any viewport
+    aspect (wide and tall alike), then x 1.15 inset. The viewport
+    therefore sits strictly inside the window with the nearest boundary
+    ~7.5% of the viewport span beyond the edge; boundary and heat edge
+    are just off-screen and appear
+    only when the viewer deliberately zooms out -- exactly when the
+    "region under evaluation" framing helps rather than confuses. Pan and
+    zoom limits are unchanged (world view remains reachable). "Evaluate
+    here" now re-frames as well, so the new window position gets the same
+    default framing; the latitude-local scale bar (item 40) needs no
+    change since it re-derives per draw.

@@ -1125,6 +1125,7 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     const c = renderer.getViewCenterLatLon();
     engine.setWindowCenter(c.lat, c.lon);
     renderer.setWindow(engine.getWindowCenter());
+    renderer.frameWindow(); // same inset cover-fit as preset loads (item 41)
     for (const id of state.minDist.keys()) computeMinDist(id);
     displayT = null; // new region: snap, never tween across hypothesis spaces
     refresh({ animate: false });

@@ -4602,15 +4602,20 @@ function createRenderer(canvas) {
 
   function frameWindow() {
     resize();
-    if (!heatBox || !(wCss > 0)) return;
-    const bw = heatBox.wx1 - heatBox.wx0;
-    const bh = heatBox.wy1 - heatBox.wy0;
-    const fit = Math.min(wCss / bw, hCss / bh) * 0.9;
+    if (!boundaryPts || !(wCss > 0)) return;
+    const cx = lonToWorldX(windowCenter.lon);
+    const cy = latToWorldY(windowCenter.lat);
+    let fit = 0;
+    for (const [wx, wy] of boundaryPts) {
+      const need = Math.min(
+        wCss / (2 * Math.abs(wx - cx)),
+        hCss / (2 * Math.abs(wy - cy))
+      );
+      if (need > fit) fit = need;
+    }
+    fit *= 1.15;
     zoom = Math.max(minZoom(), Math.min(MAX_ZOOM, Math.log2(fit)));
-    viewCenter = {
-      wx: (heatBox.wx0 + heatBox.wx1) / 2,
-      wy: (heatBox.wy0 + heatBox.wy1) / 2,
-    };
+    viewCenter = { wx: cx, wy: cy };
     clampView();
   }
 
@@ -5671,6 +5676,7 @@ exclusion r ${fmtKm(ra.exclusionRadiusKm)}
     const c = renderer.getViewCenterLatLon();
     engine.setWindowCenter(c.lat, c.lon);
     renderer.setWindow(engine.getWindowCenter());
+    renderer.frameWindow(); // same inset cover-fit as preset loads (item 41)
     for (const id of state.minDist.keys()) computeMinDist(id);
     displayT = null; // new region: snap, never tween across hypothesis spaces
     refresh({ animate: false });
