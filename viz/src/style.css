@@ -234,7 +234,6 @@ details.fold.tutorial {
 /* attester block: the machine under test, staged by the scenario */
 
 .att-block {
-  margin-top: 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 9px 11px;
@@ -247,7 +246,31 @@ details.fold.tutorial {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-faint);
-  margin-bottom: 3px;
+  margin: 9px 0 5px;
+}
+
+/* header mirrors .anchor-card header; the glyph echoes the map's declared
+   marker (translucent accent fill, ink ring) */
+.att-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+
+.att-glyph {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border: 1.5px solid var(--ink);
+}
+
+.att-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 12.5px;
 }
 
 .att-row {
