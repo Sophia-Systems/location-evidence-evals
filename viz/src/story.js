@@ -610,7 +610,31 @@ function buildStory(root) {
 
 // ---- boot -----------------------------------------------------------------
 
+// Mirror of the desktop page's small-screen handoff: this story is the phone
+// rendition, so a wide screen following a shared story link is sent to the
+// full bench instead. `?story` is the escape hatch (symmetric with the
+// bench's `?full`), for deliberately showing the story on a desktop. Each
+// direction only fires on its own side of the 760px line, so the pair can
+// never bounce.
+function wantsBench() {
+  if (new URLSearchParams(location.search).has("story")) return false;
+  return window.matchMedia("(min-width: 761px)").matches;
+}
+
+// The bench sits next to this page, but "next to" depends on addressing
+// (mirror of main.js storyUrl): from a .html path the relative sibling
+// works, while the clean /story URL strips its own trailing segment to land
+// on the demo's clean URL.
+function benchUrl() {
+  const p = location.pathname;
+  return p.endsWith(".html") ? "./index.html" : p.replace(/\/story\/?$/, "") || "/";
+}
+
 function bootStory() {
+  if (wantsBench()) {
+    location.replace(benchUrl());
+    return;
+  }
   buildStory(document.getElementById("root"));
 }
 

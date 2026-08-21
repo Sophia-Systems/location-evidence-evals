@@ -4397,7 +4397,21 @@ function buildStory(root) {
 }
 
 
+function wantsBench() {
+  if (new URLSearchParams(location.search).has("story")) return false;
+  return window.matchMedia("(min-width: 761px)").matches;
+}
+
+function benchUrl() {
+  const p = location.pathname;
+  return p.endsWith(".html") ? "./index.html" : p.replace(/\/story\/?$/, "") || "/";
+}
+
 function bootStory() {
+  if (wantsBench()) {
+    location.replace(benchUrl());
+    return;
+  }
   buildStory(document.getElementById("root"));
 }
 
