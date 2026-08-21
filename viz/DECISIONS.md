@@ -485,3 +485,21 @@ following those.
     one or two sentences, overlay opacity defaulting to 100%, and the
     declared star replaced by an ink-ringed translucent circle the truth
     graticule overlays cleanly when declared = true.
+
+44. **Second review round (adjudicated by John).** The scenario card leads
+    with policy motivation (AI-chip location verification as a check on
+    declared use and proliferation risk) in John's own copy, then mechanism
+    (anchor nodes probe attester nodes with governed GPUs; signed challenges;
+    lightspeed bounds), then what the demo shows (evidence updating the
+    spatial probability distribution) with the research link; the subtitle
+    line is gone. "How to use" is now "Instructions". The simulator panel is
+    removed outright -- free-play world-truth knobs (attack mode, true
+    delta_att, path noise) confused more than they taught; the scenario
+    defines the world, and a new read-only **Attester** card on the left
+    (declared location, behavior, true location hidden behind "Reveal true
+    location") organizes the story: attester and evidence left, anchors
+    right. The collusion-risk tip is one line ("Higher risk means this
+    anchor's evidence carries less weight"). Natural-language UI copy is
+    sentence-cased throughout (parameter/variable names stay as symbols).
+    Evidence rows no longer shrink when several are expanded (flex: none;
+    receipt fields wrap). Credits added to "About this model".
