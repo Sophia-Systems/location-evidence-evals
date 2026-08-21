@@ -184,11 +184,16 @@ body {
 
 .blurb a {
   color: var(--accent);
-  text-decoration: none;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2.5px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  transition: text-decoration-color 140ms var(--ease-out);
 }
 
 .blurb a:hover {
-  text-decoration: underline;
+  text-decoration-color: var(--accent);
 }
 
 .tutorial {
@@ -206,14 +211,32 @@ body {
   color: var(--ink-soft);
 }
 
-/* attester card: the machine under test, staged by the scenario */
+/* Scenario section header inside the scenario card */
 
-.attester-card {
-  flex: none;
+.sec-head {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
 }
 
-.att-body {
-  padding: 8px 14px 10px;
+/* attester block: the machine under test, staged by the scenario */
+
+.att-block {
+  margin-top: 9px;
+}
+
+.att-sub {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
 }
 
 .att-row {
@@ -567,21 +590,6 @@ details.fold .fold-body .credits {
   color: var(--ink-soft);
 }
 
-/* assumptions line: lives in the scenario card, right under the caption --
-   the qualifiers the current map is computed under */
-
-.assumptions {
-  margin-top: 8px;
-  font: 500 10px var(--font-mono);
-  color: var(--ink-faint);
-  border: 1px dashed var(--line);
-  border-radius: 7px;
-  padding: 5px 8px;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
 /* tile attribution: bottom edge, beneath the HUD stack */
 
 .map-attribution {
@@ -603,6 +611,8 @@ details.fold .fold-body .credits {
 
 #map-tip {
   position: absolute;
+  width: max-content; /* shrink-to-fit near the pane edge must not squeeze the pre text out of the box */
+  max-width: 260px;
   pointer-events: none;
   background: var(--card);
   color: var(--ink);

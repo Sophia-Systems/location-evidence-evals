@@ -35,8 +35,6 @@ const INFO = {
     "The lattice holding the posterior over the region under evaluation (the dashed window). Display layout only -- every distance in the model is great-circle.",
   floor:
     "Color is log-scaled relative to the brightest cell; a dim haze means the evidence discriminates little. Outside a circle, brightness never drops to zero -- residual doubt (collusion, forged signatures, faults) is kept explicit, and its depth is set by anchor trust.",
-  posture:
-    "The assumptions the current map is computed under -- they travel with any location assessment. This evaluator always assumes a compliant attester; the evasive scenario deliberately violates that so you can watch what it costs.",
 };
 
 // ---------------------------------------------------------------------------
@@ -85,16 +83,16 @@ export function buildApp(root) {
       <div class="left-col">
       <section class="card scenario-card">
         <div class="brand">
-          <h1><span class="mark">◉</span> Location evidence</h1>
+          <h1><span class="mark">◉</span> Verifying compute location</h1>
         </div>
         <p class="blurb">Verifying the location of advanced AI chips is a way to
           detect whether they're being used as declared, and reduce the
           proliferation risk of dangerous models.</p>
         <p class="blurb">Latency-based location verification asks machines at
           known locations -- <b>anchor nodes</b> -- to probe <b>attester nodes</b>
-          with governed GPUs. Attesters cryptographically sign challenges then
-          respond; distance is inferred from the round-trip time measured by
-          anchors. Since these pings can't exceed the speed of light, each
+          operating sensitive GPUs. Attesters cryptographically sign challenges
+          then respond; distance is inferred from the round-trip time measured
+          by anchors. Since these pings can't exceed the speed of light, each
           receipt bounds where the attester machine can be.</p>
         <p class="blurb">This demo visualizes how new evidence updates the
           <b>spatial probability distribution</b> of where an attester might be.
@@ -113,18 +111,13 @@ export function buildApp(root) {
             </ol>
           </div>
         </details>
+        <div class="sec-head">Scenario</div>
         <div class="chips-row">
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
         </div>
-        <div class="preset-caption" id="preset-caption"></div>
-        <div class="assumptions"><span id="assumptions-text"></span>${info("posture")}</div>
-      </section>
-
-      <!-- attester: the machine under test -- part of the scenario -->
-      <section class="card attester-card">
-        <div class="evidence-head"><span>Attester</span></div>
-        <div class="att-body">
+        <div class="att-block">
+          <div class="att-sub">Attester</div>
           <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
           <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
           <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
@@ -199,7 +192,7 @@ export function buildApp(root) {
             <div class="fold-body">
               <p>The posterior lives on the dashed ~3,600 km window -- the region under evaluation. Every distance is great-circle; country borders are drawn only to orient you.</p>
               <p>Everything here locates <i>the machine holding the attester's signing key</i>; binding that key to particular hardware is a separate, unsolved problem, and forged signatures would void every bound on this page.</p>
-              <p class="credits">Developed by John Hoopes in collaboration with Anna Wisakanto and Ryan Bevin at CAISH Hardware Assurance Programme, August 2026. Thanks to Taylor Oshan, Adam Spiers, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
+              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
             </div>
           </details>
           <details class="fold probe-anatomy" id="anatomy-fold">
@@ -403,15 +396,6 @@ export function buildApp(root) {
   // ---- global readouts ----------------------------------------------------
 
   function updateGlobalReadouts() {
-    const ro = state.lastReadouts;
-    const ev = engine.getEvaluatorParams();
-    const pis = ro.perAnchor.map((a) => a.pi);
-    const piSummary = pis.length
-      ? `collusion risk ${Math.min(...pis).toFixed(2)}–${Math.max(...pis).toFixed(2)}`
-      : "no anchors";
-    $("#assumptions-text").textContent =
-      `Assumes compliant attester · allowance ${ev.allowance.toFixed(3)} ms` +
-      ` · ${piSummary} · uniform prior`;
     updateEvidenceLog();
   }
 
@@ -780,7 +764,7 @@ export function buildApp(root) {
       <div class="tip-stats">latest RTT  ${fmtMsVal(ra.latestRtt)}
 rtt_min     ${fmtMsVal(ra.rttMin)}
 exclusion r ${fmtKm(ra.exclusionRadiusKm)}
-collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</div>
+risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
       <div class="tip-hint">Click to probe · drag to move</div>`;
     const pane = canvas.parentElement.getBoundingClientRect();
     tip.style.left = `${clientX - pane.left + 14}px`;
@@ -1051,9 +1035,7 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     $("#att-behavior").textContent =
       sim.attack === "none"
         ? "Honest — answers as quickly as it can"
-        : sim.attack === "inflation"
-          ? "Evasive — pads answers to mimic the declared location"
-          : "Evasive — answers faster than the verifier assumes";
+        : "Evasive — manipulates responses";
     $("#att-true").textContent = state.revealTruth
       ? `${preset.trueName ?? "—"} · ${fmtLatLon(sim.trueLocation)}`
       : "Hidden";
@@ -1162,17 +1144,23 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     if (state.revealTruth) pts.push(sim.trueLocation);
     return pts;
   };
-  // The parameters column floats over the canvas's right edge; a staged
-  // anchor "on-canvas" underneath it is not visible, so framing targets the
-  // unobstructed region (item 42).
+  // The parameters column floats over the canvas's right edge and the
+  // scenario column over its left; a staged marker "on-canvas" underneath
+  // either is not visible, so framing targets the unobstructed gap between
+  // them (item 42).
   const frameObstruction = () => {
     const cardRect = $("#params-card").getBoundingClientRect();
     const mapRect = canvas.getBoundingClientRect();
     return Math.max(0, mapRect.right - cardRect.left);
   };
+  const frameObstructionLeft = () => {
+    const cardRect = root.querySelector(".scenario-card").getBoundingClientRect();
+    const mapRect = canvas.getBoundingClientRect();
+    return Math.max(0, cardRect.right - mapRect.left);
+  };
 
   $("#reset-view-btn").addEventListener("click", () => {
-    renderer.frameWindow(framePoints(), frameObstruction());
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
     drawScene();
   });
 
@@ -1208,7 +1196,7 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     // (boundary + heat raster) and frame all staged anchors plus the
     // declared marker, clamped inside the window (item 42)
     renderer.setWindow(engine.getWindowCenter());
-    renderer.frameWindow(framePoints(), frameObstruction());
+    renderer.frameWindow(framePoints(), frameObstruction(), frameObstructionLeft());
 
     // sync controls to engine state
     const ev = engine.getEvaluatorParams();
@@ -1218,10 +1206,9 @@ collusion risk ${ra.pi.toFixed(2)}  ·  cap ${ra.bitsCeiling.toFixed(1)} bits</d
     syncInteriorLabel();
     updateAttesterCard(preset);
 
-    // chips + caption
+    // chips
     for (const b of $("#preset-chips").querySelectorAll("button"))
       b.classList.toggle("active", b.dataset.preset === id);
-    $("#preset-caption").textContent = preset.caption;
 
     // anatomy panel accompanies preset 1
     $("#anatomy-fold").style.display = id === "baseline" ? "" : "none";

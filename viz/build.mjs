@@ -66,7 +66,7 @@ const html = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Location evidence — evidence evaluation, visualized</title>
+<title>Verifying compute location</title>
 <style>
 ${css}
 </style>
@@ -98,7 +98,7 @@ try {
 // research-page link in the intro blurb) -- they load nothing unless clicked,
 // so they are not part of the page's network surface.
 const TILE_HOST = "basemaps.cartocdn.com";
-const NAV_LINKS = new Set(["https://johnx.co/research"]);
+const NAV_LINKS = new Set(["https://johnx.co/research", "https://caish.org/hardware"]);
 for (const m of html.matchAll(/https?:\/\/[^\s"'`\\]+/g)) {
   if (!m[0].includes(TILE_HOST) && !NAV_LINKS.has(m[0])) {
     console.error(`FAIL: emitted html contains non-whitelisted URL: ${m[0]}`);
