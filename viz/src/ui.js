@@ -139,9 +139,6 @@ export function buildApp(root) {
           <button class="collapse-toggle" id="params-collapse" type="button" aria-label="collapse parameters" aria-expanded="true">▾</button>
         </div>
         <div class="params-scroll" id="params-scroll">
-        <p class="params-intro">The verifier's side of the assessment: the
-          anchors collecting evidence, the assumptions used to interpret it,
-          and display options.</p>
         <section class="panel">
           <h2>Anchors
             <span class="h-actions">
@@ -192,7 +189,7 @@ export function buildApp(root) {
             <div class="fold-body">
               <p>The posterior lives on the dashed ~3,600 km window -- the region under evaluation. Every distance is great-circle; country borders are drawn only to orient you.</p>
               <p>Everything here locates <i>the machine holding the attester's signing key</i>; binding that key to particular hardware is a separate, unsolved problem, and forged signatures would void every bound on this page.</p>
-              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
+              <p class="credits">Developed by <a href="https://johnx.co/research" target="_blank" rel="noopener">John Hoopes</a> in collaboration with Anna Wisakanto and Ryan Bevin at <a href="https://caish.org/hardware" target="_blank" rel="noopener">CAISH Hardware Assurance Programme</a>, August 2026. Thanks to Taylor Oshan, Adam Spiers, Seth Docherty, Pascal Berrang, Will Hodgkins, Naci Cankaya, Jacob Lagerros, Ben Hodgkiss, Pau Ribelles, and Nikita Kezins for feedback and discussion.</p>
             </div>
           </details>
           <details class="fold probe-anatomy" id="anatomy-fold">
@@ -201,9 +198,9 @@ export function buildApp(root) {
               <p>One measurement is a four-packet exchange, timed on the <b>anchor's clock alone</b> -- no synchronization. The anchor signs the interval it measured; the attester relays the receipt but cannot alter it.</p>
               <svg viewBox="0 0 260 74" aria-label="round-trip delay budget">
                 <line x1="10" y1="30" x2="250" y2="30" stroke="var(--line)" stroke-width="1"/>
-                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="12" y1="30" x2="96" y2="30" stroke="var(--accent)"/>
                 <line class="an-seg" x1="100" y1="30" x2="128" y2="30" stroke="var(--warn)"/>
-                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="#4f79b8"/>
+                <line class="an-seg" x1="132" y1="30" x2="216" y2="30" stroke="var(--accent)"/>
                 <line class="an-seg" x1="220" y1="30" x2="248" y2="30" stroke="var(--ink-faint)"/>
                 <text class="an-lbl" x="14" y="16">path out</text>
                 <text class="an-lbl" x="88" y="52">δ_att: wake, parse, sign</text>

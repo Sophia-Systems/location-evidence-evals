@@ -182,7 +182,8 @@ body {
   color: var(--ink);
 }
 
-.blurb a {
+.blurb a,
+details.fold .fold-body a {
   color: var(--accent);
   font-weight: 600;
   text-decoration: underline;
@@ -192,7 +193,8 @@ body {
   transition: text-decoration-color 140ms var(--ease-out);
 }
 
-.blurb a:hover {
+.blurb a:hover,
+details.fold .fold-body a:hover {
   text-decoration-color: var(--accent);
 }
 
@@ -516,20 +518,6 @@ details.fold .fold-body .credits {
 /* chevron points down while open, right while collapsed */
 .params-card.collapsed .collapse-toggle {
   transform: rotate(-90deg);
-}
-
-.params-intro {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--ink-faint);
-}
-
-.params-intro b {
-  color: var(--warn);
-  font: 700 8.5px var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 /* map HUD: view-reset control stacked above the legend, bottom-right */
