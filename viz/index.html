@@ -4452,11 +4452,11 @@ function createRenderer(canvas) {
     }
   }
 
-  function drawDeclared(px, py, r, color) {
+  function drawDeclared(px, py, r, color, solid) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(px, py, r, 0, Math.PI * 2);
-    ctx.globalAlpha = 0.25;
+    ctx.globalAlpha = solid ? 1 : 0.25;
     ctx.fillStyle = color;
     ctx.fill();
     ctx.globalAlpha = 0.9;
@@ -4598,7 +4598,7 @@ function createRenderer(canvas) {
 
     if (scene.declared) {
       const [px, py] = latLonToCss(scene.declared.lat, scene.declared.lon);
-      drawDeclared(px, py, 9, theme.accent);
+      drawDeclared(px, py, 9, theme.accent, !!scene.declaredSolid);
       if (scene.labels) tinyLabel(px, py + 18, "declared");
     }
 

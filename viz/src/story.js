@@ -50,16 +50,17 @@ const BASE_STAGE = [
   STORY_LOC.paris,
   STORY_LOC.london,
 ];
-// Framed with the actual location included in BOTH false-declaration steps:
-// the point of those steps is where the mass settles, so the region east of
-// the declared location must be on-screen before the reveal too.
-const EVASIVE_TRUTH = [
+// The false-declaration sequence frames twice: first the claim's staging
+// alone (orientation after the jump to a new area), then expanded to include
+// the actual location before any evidence renders, so the region where the
+// mass will settle is on-screen as it appears.
+const EVASIVE_CLAIM = [
   STORY_LOC.tallinn,
   STORY_LOC.helsinki,
   STORY_LOC.hamina,
   STORY_LOC.stockholm,
-  STORY_LOC.stPetersburg,
 ];
+const EVASIVE_TRUTH = [...EVASIVE_CLAIM, STORY_LOC.stPetersburg];
 
 // ---------------------------------------------------------------------------
 // The script. Each step: a short label (aria/progress only -- no on-card
@@ -117,8 +118,7 @@ const STEPS = [
       <p>The ringed marker is the declared location. The green dots are
       <strong>anchors</strong>.</p>
       <p>The colored overlay is a probability distribution over where the
-      device actually is. Before any measurements it is uniform &mdash; the
-      evidence will reshape it.</p>`,
+      device actually is.</p>`,
   },
   {
     id: "receipt",
@@ -154,7 +154,7 @@ const STEPS = [
   {
     id: "false-claim",
     label: "a false declaration",
-    frame: EVASIVE_TRUTH,
+    frame: EVASIVE_CLAIM,
     reveal: false,
     stages: [
       {
@@ -164,16 +164,26 @@ const STEPS = [
           e.setSeed(21);
         },
       },
-      { delay: 900, fn: (e) => e.probeAll(0) },
-      { delay: 1600, fn: (e) => e.probeAll(1) },
-      { delay: 2300, fn: (e) => e.probeAll(2) },
     ],
     card: `
       <h2>A false declaration</h2>
-      <p>This operator declares a device is in <strong>Tallinn</strong>; the
-      device is elsewhere. The anchors probe it and the evaluation runs as
-      before.</p>
-      <p>The distribution concentrates away from the declared location.</p>`,
+      <p>Now a different scenario. This operator declares a device is in
+      <strong>Tallinn</strong>; the device is elsewhere.</p>`,
+  },
+  {
+    id: "false-evidence",
+    label: "the evidence",
+    frame: EVASIVE_TRUTH,
+    reveal: false,
+    stages: [
+      { delay: 400, fn: (e) => e.probeAll(0) },
+      { delay: 1100, fn: (e) => e.probeAll(1) },
+      { delay: 1800, fn: (e) => e.probeAll(2) },
+    ],
+    card: `
+      <h2>The anchors probe it</h2>
+      <p>The evaluation runs as before, and the distribution concentrates
+      away from the declared location.</p>`,
   },
   {
     id: "result",
@@ -192,8 +202,8 @@ const STEPS = [
       The desktop version of this demo has more features and exposes the
       model&rsquo;s parameters and assumptions.</p>
       <div class="story-links">
-        <a class="primary" href="./index.html?full">Open the desktop version</a>
-        <a class="secondary" href="https://johnx.co/research">About this research</a>
+        <a class="primary" href="https://johnx.co/research">About this research</a>
+        <a class="secondary" href="./index.html?full">Open the desktop version</a>
       </div>`,
   },
 ];
@@ -267,6 +277,7 @@ function buildStory(root) {
         };
       }),
       declared: sim.declared,
+      declaredSolid: true,
       truth: STEPS[currentStep].reveal ? sim.trueLocation : null,
       labels: true,
     };

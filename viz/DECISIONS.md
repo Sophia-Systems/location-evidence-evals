@@ -554,3 +554,18 @@ following those.
     operator's word" and the aim statement dropped as overexplanation. The
     closing aside now says the desktop version "has more features" instead
     of "the full demo," and its link reads "Open the desktop version."
+
+47. **Orientation beat, solid declared marker, research link first.**
+    *(Adjudicated by John.)* The false-declaration sequence split in two:
+    the scenario jump lands on an orientation step (new area, uniform
+    field, declared Tallinn, no evidence yet), and the next scroll expands
+    the frame to include the actual location while the staged probes render
+    the heatmap ("The anchors probe it"). The story's declared marker is a
+    solid fill via a new scene.declaredSolid flag -- the bench keeps its
+    deliberately translucent interior (item 43), which on the story read as
+    a rendering mistake; the story's guided camera keeps the peak visible
+    around the marker anyway. The closing card leads with "About this
+    research" as the primary action (driving phone readers to the site
+    beats sending them to a desktop-only page); the desktop link is
+    secondary. The declaration card also drops its "Before any
+    measurements..." sentence.
