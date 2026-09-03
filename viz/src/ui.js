@@ -123,8 +123,11 @@ export function buildApp(root) {
           <header class="att-head"><span class="att-glyph"></span><span class="att-name" id="att-name"></span></header>
           <div class="att-row"><span class="att-lbl">Declared</span><span class="att-val" id="att-declared"></span></div>
           <div class="att-row"><span class="att-lbl">Behavior</span><span class="att-val" id="att-behavior"></span></div>
-          <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span></div>
-          <label class="switch att-reveal"><input type="checkbox" id="reveal-truth"><span>Reveal true location</span></label>
+          <div class="att-row"><span class="att-lbl">True location</span><span class="att-val" id="att-true"></span>
+            <button class="eye-btn" id="reveal-truth" type="button" aria-pressed="false" title="Reveal true location">
+              <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button></div>
         </div>
       </section>
 
@@ -1115,8 +1118,15 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
 
   // ---- scenario card --------------------------------------------------------
 
-  $("#reveal-truth").addEventListener("change", (e) => {
-    state.revealTruth = e.target.checked;
+  function syncRevealBtn() {
+    const b = $("#reveal-truth");
+    b.setAttribute("aria-pressed", String(state.revealTruth));
+    b.title = state.revealTruth ? "Hide true location" : "Reveal true location";
+  }
+
+  $("#reveal-truth").addEventListener("click", () => {
+    state.revealTruth = !state.revealTruth;
+    syncRevealBtn();
     if (state.preset) updateAttesterCard(state.preset);
     drawScene();
   });
@@ -1250,7 +1260,7 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
     // watching mass settle on the truth, not the claim, IS the lesson).
     // Set BEFORE framing: framePoints includes the truth when revealed.
     state.revealTruth = id === "evasive";
-    $("#reveal-truth").checked = state.revealTruth;
+    syncRevealBtn();
 
     // the evaluation window recentered on the preset's staging (its pinned
     // windowCenter, or its declared location): sync the renderer's window
