@@ -662,3 +662,27 @@ following those.
     tile host and path are kept as literals in the URL template for exactly
     this reason: the whitelist works by inspection, and a host assembled from
     variables would defeat it.
+
+## v6: one source for the deployed demo
+
+52. **The deployed demo's edits come back into `viz/src`; the site repo is
+    deploy-only.** After the built pages were copied into the personal-site
+    repo on 21 August, the next six changes were made to the built
+    `index.html` there rather than here: the framework link in the blurb,
+    the auto-run stepper with the instructions fold closed by default, the
+    one-row scenario header with short chip labels, the inline eye toggle,
+    and the declared-marker rings that PR #11 had already proposed on this
+    side. That left this repository unable to rebuild what was deployed.
+
+    Each of those is now a source change here (one commit per site commit,
+    each naming the site commit it ports). A rebuild from `viz/src`
+    reproduces the deployed bench byte-for-byte apart from three comment
+    lines the build strips. The rule going forward: `viz/src` is the only
+    place the demo is edited; deploying is `node viz/build.mjs` and a copy
+    of the two built pages into the site repo. Editing the built page is a
+    one-way street, and this is the second time it has cost a
+    reconciliation.
+
+    The vector tile basemap (items 50 and 51) is merged on the same branch,
+    so the next deploy also carries it; the site copy still draws the
+    raster basemap until then.
