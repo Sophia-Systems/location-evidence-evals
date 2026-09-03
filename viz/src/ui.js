@@ -95,7 +95,9 @@ export function buildApp(root) {
           by anchors. Since these pings can't exceed the speed of light, each
           receipt bounds where the attester machine can be.</p>
         <p class="blurb">This demo visualizes how new evidence updates the
-          <b>spatial probability distribution</b> of where an attester might be.
+          <b>spatial probability distribution</b> of where an attester might be
+          -- the evidence evaluation stage of the
+          <a href="https://johnx.co/research/location-verification-framework" target="_blank" rel="noopener">location verification pipeline</a>.
           It is part of <a href="https://johnx.co/research" target="_blank" rel="noopener">ongoing research</a>
           to advance location verification technology so we can make
           better-informed policy decisions to govern AI advancement.</p>

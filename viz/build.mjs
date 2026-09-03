@@ -74,7 +74,11 @@ function stripModule(code, name) {
 // they load nothing unless clicked, so they are not part of the page's
 // network surface. Relative hrefs between the two pages are likewise inert.
 const TILE_HOST = "basemaps.cartocdn.com";
-const NAV_LINKS = new Set(["https://johnx.co/research", "https://caish.org/hardware"]);
+const NAV_LINKS = new Set([
+  "https://johnx.co/research",
+  "https://johnx.co/research/location-verification-framework",
+  "https://caish.org/hardware",
+]);
 
 function verify(html, script, out) {
   // 1. The concatenated script must parse as plain (non-module) JS.
