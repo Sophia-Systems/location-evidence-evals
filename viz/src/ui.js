@@ -113,8 +113,8 @@ export function buildApp(root) {
             </ol>
           </div>
         </details>
-        <div class="sec-head">Scenario</div>
-        <div class="chips-row">
+        <div class="sec-row">
+          <div class="sec-head">Scenario</div>
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small primary" id="run-btn" title="Reset this scenario, then probe each anchor in turn" type="button">▶ Run</button>
         </div>
@@ -1227,7 +1227,7 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
   {
     const chips = $("#preset-chips");
     chips.innerHTML = PRESETS.map(
-      (p, i) => `<button class="chip" data-preset="${p.id}" type="button">${i + 1} · ${esc(p.name)}</button>`
+      (p) => `<button class="chip" data-preset="${p.id}" title="${esc(p.name)}" type="button">${esc(p.chip ?? p.name)}</button>`
     ).join("");
     chips.addEventListener("click", (e) => {
       const b = e.target.closest("button");

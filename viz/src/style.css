@@ -164,18 +164,32 @@ body {
   margin: 8px 0 0;
 }
 
-/* scenario chips + reset, one row */
+/* scenario header, chips, and Run share one row */
 
-.chips-row {
+.sec-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 
-.chips-row .preset-chips {
+.sec-row .sec-head {
+  flex: none;
   margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sec-row .preset-chips {
+  flex: 1;
+  margin-top: 0;
+}
+
+.sec-row .btn {
+  flex: none;
+  margin-left: auto;
 }
 
 .blurb b {

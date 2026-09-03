@@ -171,18 +171,32 @@ body {
   margin: 8px 0 0;
 }
 
-/* scenario chips + reset, one row */
+/* scenario header, chips, and Run share one row */
 
-.chips-row {
+.sec-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
 }
 
-.chips-row .preset-chips {
+.sec-row .sec-head {
+  flex: none;
   margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sec-row .preset-chips {
+  flex: 1;
+  margin-top: 0;
+}
+
+.sec-row .btn {
+  flex: none;
+  margin-left: auto;
 }
 
 .blurb b {
@@ -3443,6 +3457,7 @@ const PRESETS = [
   {
     id: "baseline",
     name: "Baseline",
+    chip: "Baseline",
     caption:
       "Declared = true at Cambridge. Each receipt erases the outside of a circle; belief concentrates by exclusion. Try dragging an anchor, or lowering one's trust.",
     declared: CAMBRIDGE,
@@ -3462,6 +3477,7 @@ const PRESETS = [
   {
     id: "evasive",
     name: "Evasive attester",
+    chip: "Evasive",
     caption:
       "Declared Tallinn -- but the machine is actually in St Petersburg, padding its answers to look like Tallinn. Padding only ever adds time, so probability mass settles on the truth, not the claim.",
     declared: TALLINN,
@@ -4977,8 +4993,8 @@ function buildApp(root) {
             </ol>
           </div>
         </details>
-        <div class="sec-head">Scenario</div>
-        <div class="chips-row">
+        <div class="sec-row">
+          <div class="sec-head">Scenario</div>
           <div class="preset-chips" id="preset-chips"></div>
           <button class="btn small primary" id="run-btn" title="Reset this scenario, then probe each anchor in turn" type="button">▶ Run</button>
         </div>
@@ -5982,7 +5998,7 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
   {
     const chips = $("#preset-chips");
     chips.innerHTML = PRESETS.map(
-      (p, i) => `<button class="chip" data-preset="${p.id}" type="button">${i + 1} · ${esc(p.name)}</button>`
+      (p) => `<button class="chip" data-preset="${p.id}" title="${esc(p.name)}" type="button">${esc(p.chip ?? p.name)}</button>`
     ).join("");
     chips.addEventListener("click", (e) => {
       const b = e.target.closest("button");
