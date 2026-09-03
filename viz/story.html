@@ -2405,6 +2405,390 @@ function rampGradientCSS(name, steps = 12) {
   return `linear-gradient(to right, ${parts.join(", ")})`;
 }
 
+// ---- vector-tiles.js ----
+
+
+
+const F_TILE_LAYER = 3;
+const F_LAYER_NAME = 1;
+const F_LAYER_FEATURE = 2;
+const F_LAYER_KEY = 3;
+const F_LAYER_VALUE = 4;
+const F_LAYER_EXTENT = 5;
+const F_FEAT_TAGS = 2;
+const F_FEAT_TYPE = 3;
+const F_FEAT_GEOM = 4;
+
+const utf8 = new TextDecoder();
+
+function createReader(buf) {
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const r = {
+    pos: 0,
+    end: buf.length,
+    varint() {
+      let v = 0;
+      let shift = 1;
+      for (;;) {
+        const b = buf[r.pos++];
+        v += (b & 0x7f) * shift;
+        if (b < 0x80) return v;
+        shift *= 128;
+      }
+    },
+    svarint() {
+      const v = r.varint();
+      return v % 2 === 1 ? -(v + 1) / 2 : v / 2;
+    },
+    string(len) {
+      const s = utf8.decode(buf.subarray(r.pos, r.pos + len));
+      r.pos += len;
+      return s;
+    },
+    f32() {
+      const v = view.getFloat32(r.pos, true);
+      r.pos += 4;
+      return v;
+    },
+    f64() {
+      const v = view.getFloat64(r.pos, true);
+      r.pos += 8;
+      return v;
+    },
+    skip(wire) {
+      if (wire === 0) r.varint();
+      else if (wire === 1) r.pos += 8;
+      else if (wire === 2) r.pos += r.varint();
+      else if (wire === 5) r.pos += 4;
+      else throw new Error(`mvt: unsupported wire type ${wire}`);
+    },
+  };
+  return r;
+}
+
+function readValue(r, end) {
+  let out = null;
+  while (r.pos < end) {
+    const tag = r.varint();
+    const field = tag >> 3;
+    const wire = tag & 7;
+    if (field === 1 && wire === 2) out = r.string(r.varint());
+    else if (field === 2 && wire === 5) out = r.f32();
+    else if (field === 3 && wire === 1) out = r.f64();
+    else if (field === 4 || field === 5) out = r.varint();
+    else if (field === 6) out = r.svarint();
+    else if (field === 7) out = r.varint() !== 0;
+    else r.skip(wire);
+  }
+  r.pos = end;
+  return out;
+}
+
+function readFeature(r, end) {
+  const f = { type: 0, tags: null, geom: null };
+  while (r.pos < end) {
+    const tag = r.varint();
+    const field = tag >> 3;
+    const wire = tag & 7;
+    if (field === F_FEAT_TAGS && wire === 2) {
+      const len = r.varint();
+      const stop = r.pos + len;
+      const tags = [];
+      while (r.pos < stop) tags.push(r.varint());
+      f.tags = tags;
+    } else if (field === F_FEAT_TYPE && wire === 0) {
+      f.type = r.varint();
+    } else if (field === F_FEAT_GEOM && wire === 2) {
+      const len = r.varint();
+      const stop = r.pos + len;
+      const g = [];
+      while (r.pos < stop) g.push(r.varint());
+      f.geom = g;
+    } else r.skip(wire);
+  }
+  r.pos = end;
+  return f;
+}
+
+function readLayer(r, end) {
+  const layer = { name: "", extent: 4096, keys: [], values: [], features: [] };
+  while (r.pos < end) {
+    const tag = r.varint();
+    const field = tag >> 3;
+    const wire = tag & 7;
+    if (field === F_LAYER_NAME && wire === 2) layer.name = r.string(r.varint());
+    else if (field === F_LAYER_FEATURE && wire === 2) {
+      const len = r.varint();
+      layer.features.push(readFeature(r, r.pos + len));
+    } else if (field === F_LAYER_KEY && wire === 2) layer.keys.push(r.string(r.varint()));
+    else if (field === F_LAYER_VALUE && wire === 2) {
+      const len = r.varint();
+      layer.values.push(readValue(r, r.pos + len));
+    } else if (field === F_LAYER_EXTENT && wire === 0) layer.extent = r.varint();
+    else r.skip(wire);
+  }
+  r.pos = end;
+  return layer;
+}
+
+function decodeTile(bytes) {
+  const r = createReader(bytes);
+  const layers = {};
+  while (r.pos < r.end) {
+    const tag = r.varint();
+    const field = tag >> 3;
+    const wire = tag & 7;
+    if (field === F_TILE_LAYER && wire === 2) {
+      const len = r.varint();
+      const l = readLayer(r, r.pos + len);
+      layers[l.name] = l;
+    } else r.skip(wire);
+  }
+  return layers;
+}
+
+function featureProps(layer, feature) {
+  const p = {};
+  if (!feature.tags) return p;
+  for (let i = 0; i < feature.tags.length; i += 2) {
+    p[layer.keys[feature.tags[i]]] = layer.values[feature.tags[i + 1]];
+  }
+  return p;
+}
+
+
+const CMD_MOVE = 1;
+const CMD_LINE = 2;
+const CMD_CLOSE = 7;
+
+function addGeometry(path, geom, ox, oy, k, closeRings) {
+  let x = 0;
+  let y = 0;
+  let i = 0;
+  const n = geom.length;
+  while (i < n) {
+    const cmdInt = geom[i++];
+    const cmd = cmdInt & 7;
+    const count = cmdInt >> 3;
+    if (cmd === CMD_MOVE) {
+      for (let c = 0; c < count; c++) {
+        const dx = geom[i++];
+        const dy = geom[i++];
+        x += dx % 2 === 1 ? -(dx + 1) / 2 : dx / 2;
+        y += dy % 2 === 1 ? -(dy + 1) / 2 : dy / 2;
+        path.moveTo(ox + x * k, oy + y * k);
+      }
+    } else if (cmd === CMD_LINE) {
+      for (let c = 0; c < count; c++) {
+        const dx = geom[i++];
+        const dy = geom[i++];
+        x += dx % 2 === 1 ? -(dx + 1) / 2 : dx / 2;
+        y += dy % 2 === 1 ? -(dy + 1) / 2 : dy / 2;
+        path.lineTo(ox + x * k, oy + y * k);
+      }
+    } else if (cmd === CMD_CLOSE) {
+      if (closeRings) path.closePath();
+    } else {
+      return; // malformed stream: keep what we have rather than throwing
+    }
+  }
+}
+
+function firstPoint(geom, ox, oy, k) {
+  if (!geom || geom.length < 3) return null;
+  const dx = geom[1];
+  const dy = geom[2];
+  const x = dx % 2 === 1 ? -(dx + 1) / 2 : dx / 2;
+  const y = dy % 2 === 1 ? -(dy + 1) / 2 : dy / 2;
+  return [ox + x * k, oy + y * k];
+}
+
+
+const STYLE = {
+  light: {
+    land: "#f4f2ea",
+    sea: "#d3dee1",
+    coast: "#9fadb2",
+    green: "#eaefe6",
+    waterway: "#c2cfd3",
+    boundary: "#c6c1af",
+    boundaryState: "#d9d4c6",
+    roadCase: "#e7e3d8",
+    roadFill: "#fffefa",
+    label: "#7c8279",
+    labelHalo: "rgba(255,255,255,0.92)",
+  },
+  dark: {
+    land: "#161e1a",
+    sea: "#0a1114",
+    coast: "#38474c",
+    green: "#141c17",
+    waterway: "#243033",
+    boundary: "#303a32",
+    boundaryState: "#232c26",
+    roadCase: "#1a221c",
+    roadFill: "#2b342d",
+    label: "#7b837b",
+    labelHalo: "rgba(0,0,0,0.75)",
+  },
+};
+
+const ROAD_MIN_ZOOM = { motorway: 5, trunk: 6, primary: 8, secondary: 10 };
+
+function placeMinZoom(cls, rank, capital) {
+  const r = typeof rank === "number" ? rank : 10;
+  if (cls === "country") return r <= 2 ? 2.5 : r <= 3 ? 4 : r <= 5 ? 6.5 : 8;
+  if (cls === "state") return 7.5;
+  if (cls === "city") {
+    if (capital > 0 && capital <= 2) return r <= 2 ? 3.5 : 4.5;
+    if (r <= 2) return 4.5;
+    if (r <= 3) return 6;
+    if (r <= 5) return 7.5;
+    return 9;
+  }
+  if (cls === "town") return 10;
+  return Infinity;
+}
+
+function buildTile(layers, z, x, y) {
+  const span = WORLD / Math.pow(2, z);
+  const ox = x * span;
+  const oy = y * span;
+
+  const out = {
+    water: new Path2D(),
+    green: new Path2D(),
+    waterway: new Path2D(),
+    boundary: new Path2D(),
+    boundaryState: new Path2D(),
+    roads: { motorway: new Path2D(), trunk: new Path2D(), primary: new Path2D(), secondary: new Path2D() },
+    labels: [],
+    hasRoads: false,
+  };
+
+  const each = (name, fn) => {
+    const l = layers[name];
+    if (!l) return;
+    const k = span / l.extent;
+    for (const f of l.features) fn(f, featureProps(l, f), k, l);
+  };
+
+  each("water", (f, p, k) => {
+    if (f.type !== 3) return;
+    addGeometry(out.water, f.geom, ox, oy, k, true);
+  });
+
+  each("park", (f, p, k) => {
+    if (f.type !== 3) return;
+    addGeometry(out.green, f.geom, ox, oy, k, true);
+  });
+
+  each("landcover", (f, p, k) => {
+    if (f.type !== 3) return;
+    if (p.class !== "wood" && p.class !== "grass" && p.class !== "forest") return;
+    addGeometry(out.green, f.geom, ox, oy, k, true);
+  });
+
+  each("waterway", (f, p, k) => {
+    if (z < 7) return;
+    addGeometry(out.waterway, f.geom, ox, oy, k, false);
+  });
+
+  each("boundary", (f, p, k) => {
+    if (p.maritime === 1) return;
+    if (p.admin_level === 2) addGeometry(out.boundary, f.geom, ox, oy, k, false);
+    else if (p.admin_level === 4 && z >= 5)
+      addGeometry(out.boundaryState, f.geom, ox, oy, k, false);
+  });
+
+  each("transportation", (f, p, k) => {
+    const cls = p.class;
+    const min = ROAD_MIN_ZOOM[cls];
+    if (min == null || z < min) return;
+    addGeometry(out.roads[cls], f.geom, ox, oy, k, false);
+    out.hasRoads = true;
+  });
+
+  each("place", (f, p, k) => {
+    if (f.type !== 1) return;
+    const name = p.name_en || p.name;
+    if (!name) return;
+    const pt = firstPoint(f.geom, ox, oy, k);
+    if (!pt) return;
+    const capital = typeof p.capital === "number" ? p.capital : 0;
+    out.labels.push({
+      wx: pt[0],
+      wy: pt[1],
+      name,
+      cls: p.class,
+      capital,
+      rank: typeof p.rank === "number" ? p.rank : 10,
+      minZoom: placeMinZoom(p.class, p.rank, capital),
+    });
+  });
+
+  return out;
+}
+
+
+const TILE_SUBS = ["a", "b", "c", "d"];
+const TILE_MAX_ZOOM = 14;
+
+function createTileSource({ onTileReady, cacheMax = 220 } = {}) {
+  const cache = new Map(); // key -> {state, tile}
+  let okCount = 0;
+  let failCount = 0;
+
+  const isOffline = () => failCount > 0 && okCount === 0;
+
+  function evict() {
+    if (cache.size <= cacheMax) return;
+    for (const [k, e] of cache) {
+      if (e.state !== "pending") {
+        cache.delete(k);
+        break;
+      }
+    }
+  }
+
+  function get(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    const hit = cache.get(key);
+    if (hit) {
+      cache.delete(key); // LRU refresh
+      cache.set(key, hit);
+      return hit;
+    }
+    const entry = { state: "pending", tile: null };
+    cache.set(key, entry);
+    evict();
+
+    const sub = TILE_SUBS[Math.abs(x + y) % TILE_SUBS.length];
+    const url = `https://tiles-${sub}.basemaps.cartocdn.com/vectortiles/carto.streets/v1/${z}/${x}/${y}.mvt`;
+    fetch(url)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((ab) => {
+        const bytes = new Uint8Array(ab);
+        entry.tile = buildTile(bytes.length ? decodeTile(bytes) : {}, z, x, y);
+        entry.state = "ready";
+        okCount++;
+        if (onTileReady) onTileReady();
+      })
+      .catch(() => {
+        const wasOffline = isOffline();
+        entry.state = "failed";
+        failCount++;
+        if (!wasOffline && isOffline() && onTileReady) onTileReady();
+      });
+    return entry;
+  }
+
+  return { get, isOffline, stats: () => ({ ok: okCount, failed: failCount, cached: cache.size }) };
+}
+
 // ---- engine.js ----
 
 
@@ -3085,6 +3469,10 @@ function createEngine(options = {}) {
 
 const EARTH_CIRC_KM = 40075.017; // equatorial circumference, km
 
+const ROAD_CLASSES = ["motorway", "trunk", "primary", "secondary"];
+const ROAD_FADE_IN = { motorway: 5, trunk: 6, primary: 8, secondary: 10 };
+const LABEL_FONT = "'Avenir Next', 'Seravek', ui-sans-serif, system-ui, sans-serif";
+
 
 const FRAME_MARGIN = 0.15;
 const FRAME_INSET = 1.05;
@@ -3156,7 +3544,7 @@ function createRenderer(canvas) {
   const ctx = canvas.getContext("2d");
 
   let theme = {};
-  let tileStyle = "light_all";
+  let mapStyle = STYLE.light;
   function refreshTheme() {
     const cs = getComputedStyle(document.body);
     const v = (name, fallback) => (cs.getPropertyValue(name) || fallback).trim();
@@ -3170,9 +3558,9 @@ function createRenderer(canvas) {
       warn: v("--warn", "#b3591e"),
       halo: v("--surface", "#faf9f5"),
     };
-    tileStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark_all"
-      : "light_all";
+    mapStyle = window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? STYLE.dark
+      : STYLE.light;
   }
   refreshTheme();
 
@@ -3413,11 +3801,6 @@ function createRenderer(canvas) {
   const coastPath = buildWorldPath(COAST);
   const borderPath = buildWorldPath(BORDERS);
 
-  const TILE_CACHE_MAX = 400;
-  const tileCache = new Map(); // key -> {img, loaded, failed}
-  const SUBDOMAINS = "abcd";
-  let tileOk = 0;
-  let tileFail = 0;
   let onRedraw = null;
   let redrawPending = false;
 
@@ -3434,70 +3817,162 @@ function createRenderer(canvas) {
     });
   }
 
-  const isOffline = () => tileFail > 0 && tileOk === 0;
+  const tiles = createTileSource({ onTileReady: scheduleRedraw });
+  const isOffline = () => tiles.isOffline();
 
-  function getTile(style, z, x, y) {
-    const key = `${style}/${z}/${x}/${y}`;
-    let entry = tileCache.get(key);
-    if (entry) {
-      tileCache.delete(key); // LRU refresh
-      tileCache.set(key, entry);
-      return entry;
-    }
-    entry = { img: null, loaded: false, failed: false };
-    tileCache.set(key, entry);
-    if (tileCache.size > TILE_CACHE_MAX) {
-      for (const [k, e] of tileCache) {
-        if (e.loaded || e.failed) {
-          tileCache.delete(k);
-          break;
-        }
-      }
-    }
-    const sub = SUBDOMAINS[Math.abs(x + y) % SUBDOMAINS.length];
-    const img = new Image();
-    img.onload = () => {
-      entry.loaded = true;
-      tileOk++;
-      scheduleRedraw();
-    };
-    img.onerror = () => {
-      entry.failed = true;
-      const wasOffline = isOffline();
-      tileFail++;
-      if (!wasOffline && isOffline()) scheduleRedraw(); // flip to fallback promptly
-    };
-    img.src = `https://${sub}.basemaps.cartocdn.com/${style}/${z}/${x}/${y}@2x.png`;
-    entry.img = img;
-    return entry;
-  }
-
-  function drawTiles() {
-    const tileZ = Math.max(0, Math.min(MAX_ZOOM, Math.round(zoom)));
-    const tilesAcross = Math.pow(2, tileZ);
-    const span = WORLD / tilesAcross; // world units per tile
+  function visibleTiles() {
+    const tileZ = Math.max(0, Math.min(TILE_MAX_ZOOM, Math.round(zoom)));
+    const across = Math.pow(2, tileZ);
+    const span = WORLD / across;
     const [w0x, w0y] = cssToWorld(0, 0);
     const [w1x, w1y] = cssToWorld(wCss, hCss);
     const txMin = Math.floor(w0x / span);
     const txMax = Math.floor(w1x / span);
     const tyMin = Math.max(0, Math.floor(w0y / span));
-    const tyMax = Math.min(tilesAcross - 1, Math.floor(w1y / span));
+    const tyMax = Math.min(across - 1, Math.floor(w1y / span));
+    const out = [];
     for (let ty = tyMin; ty <= tyMax; ty++) {
       for (let tx = txMin; tx <= txMax; tx++) {
-        const wrapped = ((tx % tilesAcross) + tilesAcross) % tilesAcross;
-        const tile = getTile(tileStyle, tileZ, wrapped, ty);
-        if (!tile.loaded) continue;
-        const [px0, py0] = worldToCss(tx * span, ty * span);
-        const [px1, py1] = worldToCss((tx + 1) * span, (ty + 1) * span);
-        ctx.drawImage(
-          tile.img,
-          Math.floor(px0),
-          Math.floor(py0),
-          Math.ceil(px1 - px0) + 1,
-          Math.ceil(py1 - py0) + 1
-        );
+        const wrapped = ((tx % across) + across) % across;
+        const entry = tiles.get(tileZ, wrapped, ty);
+        if (entry.state !== "ready") continue;
+        out.push({ t: entry.tile, wx: (tx - wrapped) * span, wy: 0, span });
       }
     }
+    return out;
+  }
+
+  function drawVectorTiles() {
+    const list = visibleTiles();
+    if (!list.length) return;
+    const s = scaleNow();
+    const m = mapStyle;
+
+    ctx.save();
+    ctx.translate(wCss / 2 - viewCenter.wx * s, hCss / 2 - viewCenter.wy * s);
+    ctx.scale(s, s);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    ctx.fillStyle = m.land;
+    for (const { wx, wy, span } of list) {
+      ctx.fillRect(wx, wy, span * 1.002, span * 1.002);
+    }
+
+    const forEachPath = (get, fn) => {
+      for (const item of list) {
+        const path = get(item.t);
+        if (!path) continue;
+        ctx.save();
+        ctx.translate(item.wx, item.wy);
+        fn(path);
+        ctx.restore();
+      }
+    };
+
+    ctx.fillStyle = m.green;
+    forEachPath((t) => t.green, (p) => ctx.fill(p, "nonzero"));
+
+    ctx.fillStyle = m.sea;
+    forEachPath((t) => t.water, (p) => ctx.fill(p, "nonzero"));
+
+    ctx.strokeStyle = m.waterway;
+    ctx.lineWidth = 0.7 / s;
+    forEachPath((t) => t.waterway, (p) => ctx.stroke(p));
+
+    const roadWidth = (cls) => {
+      const base = { motorway: 2.6, trunk: 2.2, primary: 1.7, secondary: 1.2 }[cls];
+      const fade = Math.min(1, Math.max(0, zoom - ROAD_FADE_IN[cls]));
+      return { w: base * fade, on: fade > 0.02 };
+    };
+    for (const cls of ROAD_CLASSES) {
+      const { w, on } = roadWidth(cls);
+      if (!on) continue;
+      ctx.strokeStyle = m.roadCase;
+      ctx.lineWidth = (w + 1.1) / s;
+      forEachPath((t) => t.roads[cls], (p) => ctx.stroke(p));
+    }
+    for (const cls of ROAD_CLASSES) {
+      const { w, on } = roadWidth(cls);
+      if (!on) continue;
+      ctx.strokeStyle = m.roadFill;
+      ctx.lineWidth = w / s;
+      forEachPath((t) => t.roads[cls], (p) => ctx.stroke(p));
+    }
+
+    ctx.strokeStyle = m.boundaryState;
+    ctx.lineWidth = 0.7 / s;
+    ctx.globalAlpha = 0.8;
+    ctx.setLineDash([3 / s, 3 / s]);
+    forEachPath((t) => t.boundaryState, (p) => ctx.stroke(p));
+    ctx.setLineDash([]);
+    ctx.strokeStyle = m.boundary;
+    ctx.lineWidth = 1.1 / s;
+    ctx.globalAlpha = 1;
+    forEachPath((t) => t.boundary, (p) => ctx.stroke(p));
+
+    ctx.restore();
+  }
+
+  function drawTileLabels() {
+    const list = visibleTiles();
+    if (!list.length) return;
+    const s = scaleNow();
+    const cands = [];
+    const seen = new Set();
+    for (const item of list) {
+      for (const l of item.t.labels) {
+        if (zoom < l.minZoom) continue;
+        if (seen.has(l.name)) continue; // tile buffers repeat names at seams
+        const px = wCss / 2 + (l.wx + item.wx - viewCenter.wx) * s;
+        const py = hCss / 2 + (l.wy + item.wy - viewCenter.wy) * s;
+        if (px < -60 || px > wCss + 60 || py < -20 || py > hCss + 20) continue;
+        seen.add(l.name);
+        cands.push({ ...l, px, py });
+      }
+    }
+    cands.sort((a, b) => a.minZoom - b.minZoom || a.rank - b.rank);
+
+    ctx.save();
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    const placed = [];
+    for (const l of cands) {
+      const isCountry = l.cls === "country";
+      const size = isCountry ? 11 : l.cls === "state" ? 10 : l.capital > 0 ? 11 : 10;
+      ctx.font = `${isCountry ? 600 : 500} ${size}px ${LABEL_FONT}`;
+      const dot = l.cls === "city" || l.cls === "town";
+      ctx.textAlign = dot ? "left" : "center";
+      const w = ctx.measureText(l.name).width;
+      const tx = dot ? l.px + 6 : l.px;
+      const x0 = dot ? tx : tx - w / 2;
+      const box = [x0 - 2, l.py - size * 0.7, x0 + w + 2, l.py + size * 0.7];
+      let clash = false;
+      for (const r of placed) {
+        if (box[0] < r[2] && box[2] > r[0] && box[1] < r[3] && box[3] > r[1]) {
+          clash = true;
+          break;
+        }
+      }
+      if (clash) continue;
+      placed.push(box);
+      if (dot) {
+        ctx.beginPath();
+        ctx.arc(l.px, l.py, l.capital > 0 ? 2.6 : 2, 0, Math.PI * 2);
+        ctx.fillStyle = mapStyle.label;
+        ctx.fill();
+      }
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = mapStyle.labelHalo;
+      ctx.fillStyle = mapStyle.label;
+      if (isCountry) {
+        ctx.letterSpacing = "0.06em";
+      }
+      ctx.strokeText(l.name, tx, l.py);
+      ctx.fillText(l.name, tx, l.py);
+      ctx.letterSpacing = "0px";
+    }
+    ctx.restore();
   }
 
 
@@ -3621,7 +4096,7 @@ function createRenderer(canvas) {
     ctx.restore();
     ctx.globalAlpha = 1;
 
-    if (!offline) drawTiles();
+    if (!offline) drawVectorTiles();
 
     if (heatBox) {
       const [hx0, hy0] = worldToCss(heatBox.wx0, heatBox.wy0);
@@ -3640,6 +4115,7 @@ function createRenderer(canvas) {
     }
 
     if (offline) drawCities();
+    else drawTileLabels();
 
     drawWindowBoundary(scene.labels);
 
