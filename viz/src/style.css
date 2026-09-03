@@ -982,6 +982,19 @@ button {
   box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
+/* auto-run stepper: the card being probed gets a strong ring, and its Probe
+   button is depressed programmatically so the click is visible */
+
+.anchor-card.run-focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.anchor-card .probe-one.auto-press {
+  transform: scale(0.9);
+  filter: brightness(0.82);
+}
+
 .anchor-card header {
   display: flex;
   align-items: center;

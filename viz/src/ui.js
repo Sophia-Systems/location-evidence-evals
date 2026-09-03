@@ -101,7 +101,7 @@ export function buildApp(root) {
           It is part of <a href="https://johnx.co/research" target="_blank" rel="noopener">ongoing research</a>
           to advance location verification technology so we can make
           better-informed policy decisions to govern AI advancement.</p>
-        <details class="fold tutorial" id="tutorial-fold" open>
+        <details class="fold tutorial" id="tutorial-fold">
           <summary>Instructions</summary>
           <div class="fold-body">
             <ol>
@@ -116,7 +116,7 @@ export function buildApp(root) {
         <div class="sec-head">Scenario</div>
         <div class="chips-row">
           <div class="preset-chips" id="preset-chips"></div>
-          <button class="btn small" id="reset-btn" title="Return to this scenario's initial state" type="button">Reset</button>
+          <button class="btn small primary" id="run-btn" title="Reset this scenario, then probe each anchor in turn" type="button">▶ Run</button>
         </div>
         <div class="att-sub">Attester</div>
         <div class="att-block">
@@ -1121,7 +1121,64 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
     drawScene();
   });
 
-  $("#reset-btn").addEventListener("click", () => loadPreset(state.presetId));
+  // auto-run: reset the scenario, then step through each anchor's Probe so a
+  // first-time visitor sees the receipt → posterior loop without hunting for it
+  let runSeq = 0; // bumped to cancel an in-flight run
+  let runActive = false;
+  const runSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function cancelAutoRun() {
+    runSeq++;
+    runActive = false;
+    const b = $("#run-btn");
+    b.textContent = "▶ Run";
+    b.title = "Reset this scenario, then probe each anchor in turn";
+    for (const el of root.querySelectorAll(".run-focus")) el.classList.remove("run-focus");
+    for (const el of root.querySelectorAll(".auto-press")) el.classList.remove("auto-press");
+  }
+
+  async function autoRun() {
+    loadPreset(state.presetId); // begin from the scenario's initial state
+    const seq = ++runSeq;
+    runActive = true;
+    const runBtn = $("#run-btn");
+    runBtn.textContent = "◼ Stop";
+    runBtn.title = "Stop the automatic run";
+    // the anchor cards must be visible for the step-through to read
+    if ($("#params-card").classList.contains("collapsed")) $("#params-collapse").click();
+    await runSleep(500);
+    for (const a of engine.getAnchors()) {
+      if (seq !== runSeq) return;
+      const refs = cardRefs.get(a.id);
+      if (!refs) continue;
+      refs.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      refs.el.classList.add("run-focus");
+      setHover(a.id);
+      await runSleep(700);
+      if (seq !== runSeq) return;
+      const probeBtn = refs.el.querySelector(".probe-one");
+      probeBtn.classList.add("auto-press");
+      await runSleep(170);
+      if (seq !== runSeq) return;
+      probeBtn.classList.remove("auto-press");
+      doProbe(a.id);
+      await runSleep(1200);
+      if (seq !== runSeq) return;
+      refs.el.classList.remove("run-focus");
+    }
+    if (seq !== runSeq) return;
+    setHover(null);
+    cancelAutoRun();
+  }
+
+  $("#run-btn").addEventListener("click", () => {
+    if (runActive) {
+      cancelAutoRun();
+      setHover(null);
+      return;
+    }
+    autoRun();
+  });
 
   // ---- parameters column: collapsible (item 1) -----------------------------
 
@@ -1179,6 +1236,7 @@ risk ${ra.pi.toFixed(2)} · cap ${ra.bitsCeiling.toFixed(1)} bits</div>
   }
 
   function loadPreset(id) {
+    cancelAutoRun(); // switching (or re-picking) a scenario stops any auto-run
     const preset = engine.loadPreset(id);
     state.presetId = id;
     state.preset = preset;
